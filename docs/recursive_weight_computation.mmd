@@ -1,0 +1,14 @@
+graph TD
+    subgraph RecursiveWeightComputation
+        A(Base Codebook) --> C{Combine};
+        B(Phase Transformation) --> C;
+        D(Recursive References) --> C;
+        E(Error Preservation) --> C;
+        C --> F[Effective Weight];
+    end
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#ccf,stroke:#333,stroke-width:2px
+    style D fill:#9cf,stroke:#333,stroke-width:2px
+    style E fill:#9c9,stroke:#333,stroke-width:2px
+    style F fill:#cfc,stroke:#333,stroke-width:2px

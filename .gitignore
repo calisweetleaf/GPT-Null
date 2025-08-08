@@ -1,0 +1,172 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+*.dll
+*.so
+*.dylib
+
+# Distributions
+dist/
+build/
+*.egg-info/
+.eggs/
+wheels/
+*.egg
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+.coverage
+.coverage.*
+.tox/
+.pytest_cache/
+htmlcov/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Virtual environment
+venv/
+env/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# GPT-Ø specific files
+# Model state and runtime files
+model_state/
+weights_cache/
+memory_cache/
+*.lqf
+*.weights
+*.state
+
+# Neural memory runtime files
+neural_memory/
+memory_tiers/
+compressed_states/
+quantum_states/
+
+# CAS system runtime files
+cas_runtime/
+cas_cache/
+cas_state/
+
+# Logs and debugging
+logs/
+*.log
+debug_output/
+validation_reports/
+performance_metrics/
+crash_dumps/
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Config files with secrets
+config/secrets.yaml
+config/private.yaml
+*.key
+*.pem
+*.cert
+
+# Jules reference documentation (external)
+docs/Jules\ Agent\ Deep\ Research\ Manual_.md
+docs/Google\ Jules\ Deep\ Dive\ Manual_.md
+
+# Output head generated files
+tool_outputs/
+ears_outputs/
+eyes_outputs/
+isr_cache/
+spatial_cache/
+
+# Tokenizer cache
+tokenizer_cache/
+vocab_cache/
+embedding_cache/
+
+# Bayesian orchestrator files
+bayesian_cache/
+parameter_cache/
+optimization_history/
+
+# System monitoring
+system_metrics/
+performance_logs/
+resource_usage/
+
+# Testing artifacts
+test_outputs/
+test_cache/
+mock_data/
+synthetic_data/
+
+# Documentation build
+docs/_build/
+docs/build/
+site/
+
+# Package manager
+node_modules/
+.npm
+.yarn-integrity
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Security
+.secrets
+.credentials
+api_keys.txt
+tokens.txt

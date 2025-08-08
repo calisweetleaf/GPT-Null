@@ -1,0 +1,42 @@
+sequenceDiagram
+    participant User
+    participant InputRouter
+    participant ReasoningEngine
+    participant BayesianConfigurationOrchestrator as BCO
+    participant RecursiveWeightCore as RWC
+    participant NeuralMemoryRuntime as NMR
+    participant Transformer
+    participant OutputRouter
+    participant ModalityGenerators
+
+    User->>InputRouter: Multimodal Input
+    InputRouter->>ReasoningEngine: Start Reasoning Chain
+    
+    loop For each Reasoning Step
+        ReasoningEngine->>BCO: Get Current Config
+        BCO-->>ReasoningEngine: Evolved Parameters
+        
+        ReasoningEngine->>RWC: Request Computed Weights
+        RWC-->>ReasoningEngine: Dynamic Weights
+        
+        ReasoningEngine->>NMR: Retrieve Relevant Memories
+        NMR-->>ReasoningEngine: Contextual Data
+        
+        ReasoningEngine->>Transformer: Process Step
+        Transformer-->>ReasoningEngine: Processed State
+    end
+    
+    ReasoningEngine-->>InputRouter: Final Reasoning Context
+    InputRouter->>Transformer: Routed Input + Final Context
+    
+    loop For each Transformer Layer
+        Transformer->>RWC: Request Layer Weights
+        RWC-->>Transformer: Computed Layer Weights
+        
+        Transformer->>NMR: Sparse Attention & Caching
+        NMR-->>Transformer: Optimized Attention
+    end
+    
+    Transformer->>OutputRouter: Final Hidden States
+    OutputRouter->>ModalityGenerators: Route to Generator
+    ModalityGenerators-->>User: Generated Output

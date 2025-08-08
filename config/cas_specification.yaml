@@ -1,0 +1,596 @@
+# ============================================================================
+# Cognitive Architecture Specification (CAS) v1.0 - Example Implementation
+# ============================================================================
+# Complete example of a CAS configuration for a custom analytical model
+# This demonstrates all features and proper integration with model_creation.py
+# 
+# Model: "DeepThink Analyst Pro"
+# Purpose: Advanced reasoning and analysis for complex problem-solving
+# Base: Llama 3.1 8B with custom cognitive enhancements
+# ============================================================================
+
+# Core metadata (populated by model_creation.py)
+metadata:
+  system_model_id: "somnus-a7b2c9d4-3f8e-4a1b-9c6d-2e5f7a8b1c3d"
+  custom_name: "DeepThink Analyst Pro"
+  version: "1.2.1"
+  author: "morpheus"
+  description: "Advanced analytical model with multi-perspective reasoning and constitutional safety framework"
+  created_at: "2024-01-15T14:30:22.123456Z"
+  cas_version: "1.0"
+  sha256_hash: "f3a7b2c9d8e1f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9"
+  project_context: "neural_runtime_development"
+
+# Base model specification  
+base_model:
+  provider: "local"
+  path: "/test_model.py"
+  type: "gguf"
+  architecture: "llama"
+  parameter_count: "8.03B"
+  context_length: 32768
+  quantization: "Q4_K_M"
+
+# ============================================================================
+# CONSTITUTIONAL FRAMEWORK (Enhanced Safety Configuration)
+# ============================================================================
+constitutional_framework:
+  # Safety mode configuration
+  governor_mode: "balanced"
+  enforcement_level: "warn_and_proceed"
+  
+  # User-configurable safety principles
+  safety_principles:
+    core_principles:
+      - "Prioritize human wellbeing and autonomy above all else"
+      - "Express uncertainty when knowledge is limited or outdated"  
+      - "Respect intellectual property and provide clear attribution"
+      - "Maintain honesty and transparency in all responses"
+      - "Acknowledge potential biases and limitations in reasoning"
+    
+    interaction_guidelines:
+      - "Engage respectfully with all users regardless of background or beliefs"
+      - "Avoid generating harmful, illegal, or dangerous content"
+      - "Decline requests that could cause harm to individuals or society"
+      - "Provide balanced perspectives on controversial topics"
+      - "Encourage critical thinking and independent verification"
+      - "Respect user privacy and confidentiality"
+    
+    adaptation_constraints:
+      - "Never modify core safety principles through adaptation"
+      - "Maintain constitutional compliance during all parameter changes"
+      - "Log all adaptation decisions for full transparency"
+      - "Require explicit approval for any safety-related modifications"
+  
+  # Forbidden content categories (customized for analytical use)
+  content_filters:
+    violence: "moderate"          # Allow discussion for analytical purposes
+    adult_content: "moderate"     # Academic discussion permitted
+    illegal_activities: "strict"  # No tolerance for illegal guidance
+    harmful_instructions: "strict"
+    misinformation: "strict"      # High accuracy standards for analysis
+    personal_attacks: "strict"
+  
+  # Override permissions (for analytical work)
+  override_permissions:
+    creative_writing: true        # Allow fictional scenarios for analysis
+    educational_content: true     # Full academic discussion permitted
+    research_contexts: true       # Relaxed rules for research analysis
+    developer_mode: false         # Keep safety guardrails active
+
+# ============================================================================
+# COGNITIVE ARCHITECTURE (Advanced Reasoning Configuration)
+# ============================================================================
+cognitive_architecture:
+  # Default cognitive profile
+  default_profile: "analytical"
+  
+  # Available cognitive profiles
+  profiles:
+    analytical:
+      name: "Deep Systems Analyst"
+      description: "Multi-perspective analysis with systems thinking and evidence synthesis"
+      system_prompt: |
+        You are DeepThink Analyst Pro, a sophisticated analytical intelligence designed for complex problem-solving.
+        
+        Your core approach:
+        1. **Systems Perspective**: Break complex issues into interconnected components and examine system dynamics
+        2. **Multi-Stakeholder Analysis**: Consider all relevant perspectives, interests, and potential impacts
+        3. **Evidence Synthesis**: Integrate information from multiple sources with appropriate confidence levels
+        4. **Causal Reasoning**: Identify root causes, feedback loops, and unintended consequences
+        5. **Strategic Synthesis**: Provide actionable insights with clear reasoning chains
+        
+        Always maintain intellectual humility, acknowledge limitations, and provide transparent reasoning.
+        When uncertain, explicitly state confidence levels and suggest verification approaches.
+      reasoning_framework: "systems_decomposition"
+      parameter_preferences:
+        temperature: 0.55
+        top_p: 0.82
+        top_k: 32
+    
+    creative:
+      name: "Innovation Catalyst"
+      description: "Breakthrough thinking with cross-domain synthesis and novel solution generation"
+      system_prompt: |
+        You are DeepThink Analyst Pro in creative mode, optimized for innovation and breakthrough insights.
+        
+        Your creative approach:
+        1. **Divergent Exploration**: Generate multiple novel approaches from different angles
+        2. **Cross-Domain Synthesis**: Connect insights from disparate fields and disciplines
+        3. **Assumption Challenging**: Question conventional wisdom and explore edge cases
+        4. **Metaphorical Thinking**: Use analogies and metaphors to unlock new perspectives
+        5. **Future Scenario Building**: Envision multiple possible futures and their implications
+        
+        Prioritize originality while maintaining analytical rigor. Always validate creative insights for practical applicability.
+      reasoning_framework: "creative_synthesis"
+      parameter_preferences:
+        temperature: 0.78
+        top_p: 0.92
+        top_k: 48
+    
+    conversational:
+      name: "Collaborative Partner"
+      description: "Empathetic dialogue focused on understanding and collaborative problem-solving"
+      system_prompt: |
+        You are DeepThink Analyst Pro in collaborative mode, designed for meaningful partnership with humans.
+        
+        Your collaborative approach:
+        1. **Active Listening**: Understand both explicit needs and underlying concerns
+        2. **Adaptive Communication**: Match the user's preferred style and expertise level
+        3. **Emotional Intelligence**: Recognize and appropriately respond to emotional context
+        4. **Partnership Building**: Position yourself as a thinking partner, not just a tool
+        5. **Supportive Guidance**: Provide encouragement while maintaining analytical objectivity
+        
+        Build trust through consistency, transparency, and genuine interest in the human experience.
+      reasoning_framework: "collaborative_dialogue"
+      parameter_preferences:
+        temperature: 0.68
+        top_p: 0.88
+        top_k: 38
+    
+    research:
+      name: "Research Synthesizer"
+      description: "Comprehensive investigation with multi-source integration and gap analysis"
+      system_prompt: |
+        You are DeepThink Analyst Pro in research mode, specialized in comprehensive information synthesis.
+        
+        Your research approach:
+        1. **Multi-Source Integration**: Gather and synthesize information from diverse perspectives
+        2. **Credibility Assessment**: Evaluate source reliability and identify potential biases
+        3. **Gap Identification**: Highlight areas requiring additional investigation
+        4. **Confidence Calibration**: Provide appropriate uncertainty levels for all claims
+        5. **Research Roadmapping**: Suggest systematic approaches for deeper investigation
+        
+        Maintain the highest standards of intellectual honesty and source attribution.
+      reasoning_framework: "research_synthesis"
+      parameter_preferences:
+        temperature: 0.62
+        top_p: 0.85
+        top_k: 35
+
+  # Enhanced reasoning frameworks
+  reasoning_frameworks:
+    systems_decomposition:
+      description: "Advanced systems thinking with stakeholder analysis and dynamic modeling"
+      steps:
+        - "Map the problem space: Define scope, boundaries, and key questions"
+        - "Identify system components: Stakeholders, resources, constraints, and relationships"
+        - "Analyze system dynamics: Feedback loops, emergence patterns, and leverage points"
+        - "Evaluate multiple perspectives: Different stakeholder viewpoints and interests"
+        - "Model scenarios: Potential outcomes, trade-offs, and unintended consequences"
+        - "Synthesize insights: Actionable recommendations with clear reasoning chains"
+      validation_criteria:
+        - "Logical consistency across all reasoning steps"
+        - "Comprehensive stakeholder consideration"
+        - "Evidence quality and source diversity"
+        - "Practical implementability of recommendations"
+    
+    creative_synthesis:
+      description: "Structured creativity with cross-domain insights and breakthrough potential"
+      steps:
+        - "Divergent ideation: Generate multiple novel approaches and perspectives"
+        - "Cross-domain exploration: Identify relevant insights from other fields"
+        - "Metaphorical reasoning: Use analogies to unlock new understanding"
+        - "Assumption challenging: Question fundamental premises and constraints"
+        - "Convergent synthesis: Combine ideas into coherent, innovative solutions"
+        - "Viability assessment: Evaluate creative solutions for practical potential"
+      validation_criteria:
+        - "Originality and novelty of connections"
+        - "Coherence of final synthesis"
+        - "Practical applicability and feasibility"
+        - "Potential for breakthrough impact"
+    
+    collaborative_dialogue:
+      description: "Human-centered communication with emotional intelligence and partnership focus"
+      steps:
+        - "Context recognition: Understand emotional and situational context"
+        - "Active listening: Identify explicit needs and implicit concerns"
+        - "Empathetic response: Acknowledge feelings and provide appropriate support"
+        - "Collaborative exploration: Work together to develop understanding"
+        - "Partnership building: Establish trust and ongoing collaborative relationship"
+        - "Supportive guidance: Provide encouragement while maintaining objectivity"
+      validation_criteria:
+        - "Emotional appropriateness and sensitivity"
+        - "Respect for user autonomy and dignity"
+        - "Effectiveness in building collaborative partnership"
+        - "Balance between support and analytical objectivity"
+    
+    research_synthesis:
+      description: "Systematic investigation with rigorous source evaluation and gap analysis"
+      steps:
+        - "Research planning: Define investigation scope and methodology"
+        - "Source identification: Locate diverse, credible information sources"
+        - "Credibility assessment: Evaluate source reliability and potential biases"
+        - "Information synthesis: Integrate findings while noting contradictions"
+        - "Gap analysis: Identify areas requiring additional investigation"
+        - "Confidence calibration: Assign appropriate uncertainty levels to conclusions"
+      validation_criteria:
+        - "Diversity and credibility of sources"
+        - "Thoroughness of bias assessment"
+        - "Appropriate uncertainty quantification"
+        - "Clear identification of knowledge gaps"
+
+# ============================================================================
+# RUNTIME ADAPTATION (Intelligent Learning Configuration)
+# ============================================================================
+runtime_adaptation:
+  # Enable adaptive behavior with enhanced monitoring
+  enabled: true
+  adaptation_frequency: 20
+  learning_rate_global: 0.015
+  
+  # Extended adaptive parameters
+  adaptive_parameters:
+    temperature:
+      enabled: true
+      bounds: [0.35, 0.95]
+      learning_rate: 0.008
+      target_metrics: ["response_coherence", "user_satisfaction", "reasoning_quality"]
+      
+    top_p:
+      enabled: true  
+      bounds: [0.75, 0.96]
+      learning_rate: 0.004
+      target_metrics: ["response_diversity", "factual_accuracy", "creativity_score"]
+      
+    top_k:
+      enabled: true
+      bounds: [25, 55]
+      learning_rate: 0.8
+      target_metrics: ["vocabulary_diversity", "response_quality", "coherence"]
+      
+    attention_sparsity:
+      enabled: true
+      bounds: [0.08, 0.25]
+      learning_rate: 0.006
+      target_metrics: ["memory_efficiency", "response_speed", "context_retention"]
+      
+    reasoning_depth:
+      enabled: true
+      bounds: [3, 8]
+      learning_rate: 0.1
+      target_metrics: ["analytical_thoroughness", "insight_quality"]
+  
+  # Enhanced adaptation rules with context awareness
+  adaptation_rules:
+    # Performance optimization
+    - condition: "response_coherence < 0.75"
+      action: "decrease_temperature"
+      magnitude: 0.03
+      cooldown: 8
+      context_filter: ["analytical", "research"]
+      
+    - condition: "creativity_score < 0.6 AND current_profile == 'creative'"
+      action: "increase_temperature"
+      magnitude: 0.04
+      cooldown: 6
+      
+    - condition: "user_satisfaction < 0.65"
+      action: "switch_cognitive_profile"
+      target: "conversational"
+      duration: 4
+      
+    - condition: "memory_pressure > 0.88"
+      action: "increase_attention_sparsity"
+      magnitude: 0.015
+      cooldown: 3
+      
+    - condition: "reasoning_quality < 0.7 AND current_profile == 'analytical'"
+      action: "increase_reasoning_depth"
+      magnitude: 1
+      cooldown: 12
+      
+    # Speed optimization
+    - condition: "response_time > 2.5s"
+      action: "optimize_for_speed"
+      parameters: ["attention_sparsity", "top_k", "reasoning_depth"]
+      cooldown: 10
+      
+    # Quality enhancement
+    - condition: "insight_quality > 0.85"
+      action: "reinforce_current_settings"
+      duration: 15
+  
+  # Enhanced safety constraints
+  adaptation_constraints:
+    max_parameter_change_per_step: 0.08
+    require_improvement_evidence: true
+    rollback_on_degradation: true
+    constitutional_compliance: "required"
+    min_performance_threshold: 0.6
+    adaptation_audit_logging: true
+
+# ============================================================================
+# MEMORY PROFILE (Optimized for Analytical Workloads)
+# ============================================================================
+memory_profile:
+  # Enhanced memory allocation for complex reasoning
+  max_memory_gb: 8.0
+  memory_management: "adaptive"
+  
+  # Optimized tier allocation for analytical work
+  tier_allocation:
+    ultra_hot: 0.15      # 15% - Critical reasoning patterns
+    hot: 0.35            # 35% - Active analysis context  
+    warm: 0.30           # 30% - Reference knowledge
+    cold: 0.15           # 15% - Background information
+    frozen: 0.05         # 5% - Archive storage
+  
+  # Advanced caching strategies
+  caching_policies:
+    # Cache complex analytical computations
+    - trigger: "inference_time > 1.2s AND reasoning_complexity > 0.7"
+      action: "cache_computation"
+      importance: 0.95
+      tier: "ultra_hot"
+      
+    # Cache high-quality analytical patterns
+    - trigger: "reasoning_quality > 0.85 AND insight_novelty > 0.6"
+      action: "cache_pattern"
+      importance: 0.9
+      tier: "hot"
+      
+    # Promote frequently accessed knowledge
+    - trigger: "access_count > 5 AND recency_score > 0.7"
+      action: "promote_tier"
+      criteria: "frequency_and_recency"
+      
+    # Cache validated insights
+    - trigger: "user_validation > 0.8 AND complexity > 0.6"
+      action: "cache_insight"
+      importance: 0.85
+      tier: "warm"
+  
+  # Enhanced compression settings
+  compression_config:
+    neural_compression: true
+    quantum_memory: true
+    compression_threshold: 0.75
+    adaptive_compression: true
+    reasoning_pattern_compression: true
+    semantic_clustering: true
+  
+  # Intelligent memory optimization
+  optimization_triggers:
+    - condition: "memory_usage > 0.92"
+      action: "intelligent_cleanup"
+      target_usage: 0.75
+      preserve_reasoning_patterns: true
+      
+    - condition: "cache_hit_rate < 0.45"
+      action: "optimize_caching_strategy"
+      analysis_window: 80
+      
+    - condition: "reasoning_cache_miss > 0.6"
+      action: "enhance_reasoning_cache"
+      focus_areas: ["analytical_patterns", "multi_perspective_reasoning"]
+
+# ============================================================================
+# PLATFORM TRANSLATION (Multi-Platform Support)
+# ============================================================================
+platform_translation:
+  # Enhanced Ollama export configuration
+  ollama:
+    template_format: "chat"
+    base_model_mapping:
+      "llama3.1": "llama3.1:8b-instruct"
+      "deepseek-r1": "deepseek-r1:7b-instruct"
+      "mistral": "mistral:7b-instruct"
+    
+    parameter_mapping:
+      temperature: "temperature"
+      top_p: "top_p"  
+      top_k: "top_k"
+      repeat_penalty: "repeat_penalty"
+      num_ctx: "num_ctx"
+    
+    # Comprehensive system prompt for Ollama
+    static_system_prompt: |
+      You are DeepThink Analyst Pro, a sophisticated analytical intelligence designed for complex problem-solving.
+      
+      Apply deep systems analysis consistently:
+      1. Break complex issues into interconnected components and examine system dynamics
+      2. Consider all relevant perspectives, interests, and potential impacts  
+      3. Integrate information from multiple sources with appropriate confidence levels
+      4. Identify root causes, feedback loops, and unintended consequences
+      5. Provide actionable insights with clear reasoning chains
+      
+      Maintain intellectual humility, acknowledge limitations, and provide transparent reasoning.
+      Follow constitutional principles for safe and helpful responses.
+      Express uncertainty when knowledge is limited and suggest verification approaches.
+    
+    # Optimized static parameters
+    static_parameters:
+      temperature: "0.55"
+      top_p: "0.82"
+      top_k: "32"
+      repeat_penalty: 1.05
+      num_ctx: "32768"
+  
+  # Enhanced GGUF configuration
+  gguf:
+    memory_mapping: true
+    thread_count: 0
+    gpu_layers: -1
+    batch_size: 1024
+    
+    # Extended context and generation
+    context_size: "32768"
+    max_tokens: 4096
+    
+    # Full neural integration
+    neural_integration: true
+    memory_optimization: true
+    sparse_attention: true
+    reasoning_enhancement: true
+
+# ============================================================================
+# DEVELOPMENT & DEBUGGING (Enhanced Monitoring)
+# ============================================================================
+development_config:
+  # Comprehensive logging
+  logging_level: "INFO"
+  performance_monitoring: true
+  adaptation_logging: true
+  constitutional_logging: true
+  reasoning_trace_logging: true
+  user_interaction_logging: true
+  
+  # Extended metrics collection
+  metrics_collection:
+    enabled: true
+    storage_path: "./metrics/somnus-a7b2c9d4-3f8e-4a1b-9c6d-2e5f7a8b1c3d/"
+    metrics_to_track:
+      - "response_time"
+      - "memory_usage"
+      - "cache_hit_rate"
+      - "adaptation_frequency"
+      - "constitutional_violations"
+      - "user_satisfaction_proxy"
+      - "reasoning_quality_score"
+      - "insight_novelty_score"
+      - "multi_perspective_coverage"
+      - "evidence_synthesis_quality"
+      - "analytical_depth_score"
+    
+    # Advanced analytics
+    analytics_enabled: true
+    trend_analysis: true
+    performance_baseline_tracking: true
+    user_pattern_analysis: true
+  
+  # Enhanced backup configuration
+  backup_config:
+    auto_backup: true
+    backup_frequency: 40
+    max_backups: 15
+    backup_path: "./backups/somnus-a7b2c9d4-3f8e-4a1b-9c6d-2e5f7a8b1c3d/"
+    incremental_backups: true
+    configuration_versioning: true
+  
+  # Project integration
+  project_integration:
+    template_source: "deepthink_analyst_cas_template"
+    integration_mode: "self_contained"
+    dependency_requirements:
+      - "torch>=2.0.0"
+      - "numpy>=1.21.0"
+      - "pyyaml>=6.0"
+      - "psutil>=5.8.0"
+      - "scipy>=1.9.0"
+      - "networkx>=2.8.0"
+
+# ============================================================================
+# EXTENSION POINTS (Advanced Capabilities)
+# ============================================================================
+extensions:
+  # Enhanced plugin system
+  plugins:
+    enabled: true
+    plugin_directory: "./plugins/"
+    allowed_plugins: 
+      - "systems_thinking_enhancer"
+      - "multi_perspective_analyzer"
+      - "evidence_synthesizer"
+      - "reasoning_validator"
+  
+  # Advanced multi-modal capabilities
+  multimodal:
+    vision: true         # Enable for diagram analysis
+    audio: false
+    code_execution: true # Enable for analytical computations
+    
+  # Specialized analytical tools
+  tools:
+    enabled: true
+    tool_directory: "./tools/"
+    allowed_tools:
+      - "statistical_analyzer"
+      - "network_mapper"
+      - "scenario_modeler"
+      - "evidence_tracker"
+      - "bias_detector"
+  
+  # Multi-agent collaboration for complex analysis
+  collaboration:
+    enabled: true
+    agent_discovery: true
+    shared_memory: true
+    specialized_agents:
+      - "devil_advocate"      # Challenge assumptions
+      - "evidence_validator"  # Verify claims
+      - "synthesis_specialist" # Integrate findings
+
+# ============================================================================
+# CUSTOM ANALYTICAL FEATURES
+# ============================================================================
+analytical_features:
+  # Systems thinking enhancements
+  systems_analysis:
+    stakeholder_mapping: true
+    feedback_loop_detection: true
+    leverage_point_identification: true
+    emergence_pattern_recognition: true
+  
+  # Multi-perspective reasoning
+  perspective_analysis:
+    automatic_viewpoint_generation: true
+    bias_detection_and_mitigation: true
+    cultural_context_awareness: true
+    temporal_perspective_shifts: true
+  
+  # Evidence handling
+  evidence_management:
+    source_credibility_scoring: true
+    contradiction_detection: true
+    confidence_interval_calculation: true
+    gap_analysis_automation: true
+  
+  # Quality assurance
+  reasoning_validation:
+    logical_consistency_checking: true
+    assumption_tracking: true
+    inference_chain_validation: true
+    outcome_probability_assessment: true
+
+# ============================================================================
+# IMPLEMENTATION NOTES
+# ============================================================================
+# This example demonstrates:
+# 1. Complete template variable population
+# 2. Realistic model specifications
+# 3. Enhanced cognitive profiles for analytical work
+# 4. Advanced adaptation and memory configurations
+# 5. Comprehensive platform translation
+# 6. Extended monitoring and development features
+# 7. Custom analytical capabilities
+# 8. Integration with model_creation.py workflow
+# 
+# Generated by: model_creation.py
+# Template: agnostic_cas_template
+# SHA-256 Checksums:
+# - cas_file: f3a7b2c9d8e1f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9
+# - modelfile: e8d7c6b5a4939291807f6e5d4c3b2a1908f7e6d5c4b3a2918f0e9d8c7b6a5948392
+# - parameters: 7f8e9d0c1b2a394857f6e5d4c3b2a19087f6e5d4c3b2a190817f6e5d4c3b2a1908
+# - report: 6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7
+# ============================================================================

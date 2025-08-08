@@ -1,0 +1,192 @@
+graph TD
+    %% === NEURAL MEMORY HIERARCHY ARCHITECTURE ===
+    
+    %% Input Processing Layer
+    INPUT["Input Tensor\nShape: [B, L, 4096]\nSize: Variable\nType: torch.Tensor"] --> HASH["Content Hash Generator\nAlgorithm: xxHash64\nPurpose: Deduplication\nOutput: 16-char hex"]
+    
+    INPUT --> IMPORTANCE["Importance Scorer\nNeural Network: 4096→64→1\nActivation: Sigmoid\nRange: 0.0-1.0\nThreshold: Dynamic"]
+    
+    IMPORTANCE --> TIER_DECISION{"Memory Tier Decision\nUltra Hot: >0.9-0.2*pressure\nHot: >0.7-0.1*pressure\nWarm: >0.5\nCold: >0.2\nFrozen: ≤0.2"}
+    
+    %% === MEMORY TIER 1: ULTRA_HOT (L1) ===
+    TIER_DECISION -->|importance > 0.9| ULTRA_HOT["ULTRA_HOT Memory Tier L1\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 SPECIFICATIONS:\n• Access Time: <1ms\n• Capacity: 10% = 600MB\n• Max Items: ~100\n• Storage: RAM - Direct Access\n• Compression: NONE (Raw tensors)\n• Memory Type: torch.Tensor\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 OPERATIONS:\n• Zero-copy access\n• Immediate retrieval\n• Auto-promotion target\n• Emergency cleanup priority\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📈 MONITORING:\n• Access count tracking\n• Last access timestamp\n• Promotion candidates\n• Memory pressure response"]
+    
+    %% === MEMORY TIER 2: HOT (L2) ===
+    TIER_DECISION -->|importance > 0.7| HOT["HOT Memory Tier L2\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 SPECIFICATIONS:\n• Access Time: <10ms\n• Capacity: 30% = 1.8GB\n• Max Items: ~300\n• Storage: RAM - Compressed\n• Compression: Neural 2:1 ratio\n• Quality Threshold: >0.8\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧠 NEURAL COMPRESSOR:\n• Architecture: 4096→2048→1024→512\n• Activation: GELU, Tanh output\n• Encoder: 3-layer MLP\n• Decoder: 3-layer MLP\n• Quality Estimator: 4096→64→1\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 OPERATIONS:\n• Learned compression/decompression\n• Quality-based decisions\n• Fast tensor reconstruction\n• MSE loss monitoring"]
+    
+    HOT --> HOT_COMPRESSOR["Neural Compressor L2\nInput: 4096 dims\nCompressed: 512 dims\nFactor: 8x reduction\nQuality Score: 0.8-1.0\nMSE Loss: <0.01"]
+    
+    %% === MEMORY TIER 3: WARM (L3) ===
+    TIER_DECISION -->|importance > 0.5| WARM["WARM Memory Tier L3\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 SPECIFICATIONS:\n• Access Time: <100ms\n• Capacity: 40% = 2.4GB\n• Max Items: ~400\n• Storage: RAM - Neural Compressed\n• Compression: Neural 4:1 ratio\n• Quality Threshold: >0.7\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧠 NEURAL COMPRESSOR:\n• Architecture: 4096→2048→1024→256\n• Compression Factor: 16x\n• Bounded Representation: Tanh\n• Reconstruction Quality: >70%\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 OPERATIONS:\n• Medium-latency access\n• Automatic tier migration\n• Background compression\n• Access pattern learning"]
+    
+    WARM --> WARM_COMPRESSOR["Neural Compressor L3\nInput: 4096 dims\nCompressed: 256 dims\nFactor: 16x reduction\nQuality Score: 0.7-0.9\nMSE Loss: <0.05"]
+    
+    %% === MEMORY TIER 4: COLD (L4) ===
+    TIER_DECISION -->|importance > 0.2| COLD["COLD Memory Tier L4\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 SPECIFICATIONS:\n• Access Time: <1s\n• Capacity: 15% = 900MB\n• Max Items: ~150\n• Storage: Disk - LZ4 Compressed\n• Compression: Neural + LZ4\n• Total Ratio: 8:1 + LZ4\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧠 DUAL COMPRESSION:\n• Stage 1: Neural 4096→128 (32x)\n• Stage 2: LZ4 binary compression\n• Combined Ratio: ~50-100x\n• Quality Threshold: >0.6\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n💾 DISK OPERATIONS:\n• Async I/O operations\n• Temporary file storage\n• Memory-mapped files\n• Background sync"]
+    
+    COLD --> COLD_COMPRESSOR["Neural Compressor L4\nInput: 4096 dims\nCompressed: 128 dims\nFactor: 32x reduction\nQuality Score: 0.6-0.8"]
+    
+    COLD_COMPRESSOR --> LZ4_COMPRESS["LZ4 Binary Compression\nAlgorithm: LZ4 Frame\nSpeed: >100 MB/s\nAdditional: 2-5x ratio\nTotal: 64-160x reduction"]
+    
+    %% === MEMORY TIER 5: FROZEN (L5) ===
+    TIER_DECISION -->|importance ≤ 0.2| FROZEN["FROZEN Memory Tier L5\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 SPECIFICATIONS:\n• Access Time: >1s\n• Capacity: 5% = 300MB\n• Max Items: ~50\n• Storage: Disk - Quantum State\n• Compression: Quantum + LZ4\n• Total Ratio: 200-500x\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚛️ QUANTUM COMPRESSION:\n• Basis States: 16 learnable\n• State Dimension: 4096\n• Complex Amplitudes: R+iI\n• Superposition Encoding\n• Unit Probability Constraint\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔬 QUANTUM OPERATIONS:\n• Amplitude encoding: 4096→32\n• Complex normalization\n• Basis state projection\n• Quantum decoherence handling"]
+    
+    FROZEN --> QUANTUM_ENCODER["Quantum Memory State\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚛️ QUANTUM ARCHITECTURE:\n• Input: 4096D tensor\n• Basis States: 16×4096 matrix\n• Amplitude Encoder: 4096→32\n• Complex Coefficients: R+iI\n• Normalization: L2 unit sphere\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔬 ENCODING PROCESS:\n1. Generate complex amplitudes\n2. Split real/imaginary parts\n3. Normalize to unit probability\n4. Superposition representation\n5. Basis state projection\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📐 MATHEMATICAL FOUNDATION:\n• |ψ⟩ = Σᵢ αᵢ|bᵢ⟩\n• Σᵢ |αᵢ|² = 1\n• Reconstruction: ⟨ψ|B⟩\n• Compression: 4096→32 (128x)"]
+    
+    QUANTUM_ENCODER --> QUANTUM_LZ4["Quantum + LZ4 Pipeline\nStage 1: Quantum 128x reduction\nStage 2: LZ4 on complex bytes\nTotal Ratio: 200-500x\nFinal Size: 8-20KB from 16MB"]
+    
+    %% === ATTENTION OPTIMIZATION SYSTEM ===
+    
+    INPUT --> ATTENTION_ROUTER["Sparse Attention Router\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 CONFIGURATION:\n• Model Dim: 4096\n• Heads: 64 (full) → 16 (sparse)\n• Sparsity Ratio: 0.1 (adjustable)\n• Memory Pressure Adaptive\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧠 SPARSITY PREDICTOR:\n• Architecture: 4096→1024→1\n• Activation: ReLU → Sigmoid\n• Output: Importance score [0,1]\n• Threshold: Dynamic pressure-based\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ PERFORMANCE OPTIMIZATION:\n• Compute: O(n²) → O(0.1n²)\n• Memory: 90% reduction\n• Quality: >95% preserved\n• Latency: 50-80% improvement"]
+    
+    ATTENTION_ROUTER --> SPARSITY_PREDICTOR["Importance Scoring Network\nInput: Q, K, V tensors\nOutput: Binary attention mask\nThreshold: 0.1 * (1 + pressure)\nFallback: Top-32 positions"]
+    
+    SPARSITY_PREDICTOR --> SPARSE_COMPUTE["Sparse Attention Computation\nSelected Positions: ~10%\nAttention Heads: 16 (reduced)\nComputation: Masked operations\nOutput: Sparse attention matrix"]
+    
+    SPARSE_COMPUTE --> ATTENTION_RECONSTRUCT["Full Attention Reconstruction\nZero-fill non-important positions\nMaintain original tensor shape\nQuality preservation: >95%\nMemory savings: ~90%"]
+    
+    %% === CONTEXT SUMMARIZATION SYSTEM ===
+    
+    INPUT --> CONTEXT_ANALYZER["Context Length Analyzer\nMax Length Threshold: 1000 tokens\nSummarization Trigger: >1000\nSummary Ratio: 0.1 (configurable)\nQuality Target: >90% retention"]
+    
+    CONTEXT_ANALYZER -->|length > 1000| CONTEXT_SUMMARIZER["Context Summarization Engine\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 ARCHITECTURE:\n• Model Dimension: 4096\n• Summary Queries: Learnable\n• Cross-Attention Heads: 8\n• Summary Length: 10% of input\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧠 IMPORTANCE SCORING:\n• Network: 4096→2048→1\n• Activation: ReLU → Sigmoid\n• Position-wise scoring\n• Content-aware weighting\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ SUMMARIZATION PROCESS:\n1. Score each position importance\n2. Weight context by importance\n3. Cross-attend with queries\n4. Generate compressed summary\n5. Preserve semantic meaning"]
+    
+    CONTEXT_SUMMARIZER --> SUMMARY_QUERIES["Learnable Summary Queries\nCount: 1/summary_ratio = 10\nDimension: 4096\nInitialization: Normal/√d\nPurpose: Information extraction"]
+    
+    SUMMARY_QUERIES --> CROSS_ATTENTION["Cross-Attention Mechanism\nQuery: Summary queries\nKey/Value: Weighted context\nHeads: 8\nOutput: Compressed summary"]
+    
+    %% === MEMORY MANAGEMENT ORCHESTRATOR ===
+    
+    subgraph MEMORY_MANAGER["Memory Management Orchestrator"]
+        TIER_MONITOR["Tier Capacity Monitor\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 TIER LIMITS:\n• Ultra Hot: 10% = 600MB (~100 items)\n• Hot: 30% = 1.8GB (~300 items)\n• Warm: 40% = 2.4GB (~400 items)\n• Cold: 15% = 900MB (~150 items)\n• Frozen: 5% = 300MB (~50 items)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 MONITORING FREQUENCY:\n• Real-time capacity checking\n• Automatic overflow handling\n• LRU eviction policies\n• Intelligent tier migration"]
+        
+        PRESSURE_MONITOR["Memory Pressure Monitor\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 PRESSURE CALCULATION:\n• RSS Memory / Max Memory\n• Process Memory Percentage\n• System Available Memory\n• PyTorch Cache Usage\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚨 PRESSURE THRESHOLDS:\n• Low: <50% (Normal operation)\n• Medium: 50-70% (Optimization)\n• High: 70-85% (Aggressive cleanup)\n• Critical: >85% (Emergency mode)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ RESPONSE ACTIONS:\n• Adjust sparsity thresholds\n• Trigger tier demotions\n• Force garbage collection\n• Emergency cleanup procedures"]
+        
+        PROMOTION_ENGINE["Access Pattern Promotion\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 PROMOTION CRITERIA:\n• Access Count: >10\n• Importance Score: >0.5\n• Recent Access Pattern\n• Tier Capacity Available\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⬆️ PROMOTION PROCESS:\n1. Identify promotion candidates\n2. Check higher tier capacity\n3. Decompress if necessary\n4. Migrate to higher tier\n5. Update access statistics\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📈 BENEFITS:\n• Faster access to hot data\n• Adaptive performance\n• Usage pattern learning\n• Automatic optimization"]
+        
+        EVICTION_ENGINE["LRU Eviction Engine\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 EVICTION POLICY:\n• Least Recently Used (LRU)\n• Importance-weighted LRU\n• Tier capacity enforcement\n• Graceful demotion attempt\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⬇️ DEMOTION PROCESS:\n1. Sort by last access time\n2. Try demotion to lower tier\n3. Apply appropriate compression\n4. Update tier assignments\n5. Force deletion if necessary\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 SMART EVICTION:\n• Preserve high importance\n• Maintain semantic diversity\n• Minimize reconstruction cost\n• Balance tier utilization"]
+    end
+    
+    %% === BACKGROUND MANAGEMENT THREAD ===
+    
+    BACKGROUND_THREAD["Background Management Thread\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⏱️ SCHEDULING:\n• Check Interval: 1 second\n• GC Trigger: Every 10 seconds\n• Emergency Check: Continuous\n• Daemon Thread: Non-blocking\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 OPERATIONS:\n• Continuous pressure monitoring\n• Automatic tier management\n• Garbage collection coordination\n• Performance statistics update\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚨 EMERGENCY PROCEDURES:\n• Pressure >80%: Emergency mode\n• Force hot tier eviction\n• Keep only top-10 items\n• Clear PyTorch cache\n• Trigger system GC"]
+    
+    BACKGROUND_THREAD --> EMERGENCY_CLEANUP["Emergency Cleanup Procedures\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚨 TRIGGER CONDITIONS:\n• Memory Pressure >80%\n• System memory exhaustion\n• Manual cleanup request\n• Critical allocation failure\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ EMERGENCY ACTIONS:\n1. Force evict hot/ultra-hot tiers\n2. Keep only top-importance items\n3. Aggressive tier demotion\n4. Python garbage collection\n5. PyTorch cache clearing\n6. System memory release\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 SUCCESS METRICS:\n• Memory usage reduction\n• Pressure normalization\n• System stability restoration\n• Performance recovery"]
+    
+    %% === PERFORMANCE MONITORING SYSTEM ===
+    
+    subgraph PERFORMANCE_SYSTEM["Performance Monitoring & Statistics"]
+        CACHE_STATS["Cache Performance Statistics\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 METRICS TRACKED:\n• Cache Hits: Successful retrievals\n• Cache Misses: Failed retrievals\n• Hit Rate: Hits/(Hits+Misses)\n• Total Requests: Lifetime counter\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ PERFORMANCE INDICATORS:\n• Target Hit Rate: >85%\n• Response Time: Per-tier timing\n• Compression Effectiveness\n• Memory Savings Achieved\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📈 OPTIMIZATION FEEDBACK:\n• Adjust tier thresholds\n• Tune compression ratios\n• Optimize access patterns\n• Guide promotion decisions"]
+        
+        COMPRESSION_STATS["Compression Analytics\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 COMPRESSION METRICS:\n• Total Bytes Saved: Cumulative\n• Average Compression Ratio\n• Quality Scores by Tier\n• Reconstruction Accuracy\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔬 QUALITY ANALYSIS:\n• MSE Loss Tracking\n• Semantic Preservation\n• Reconstruction Fidelity\n• Compression Effectiveness\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ ADAPTIVE TUNING:\n• Dynamic quality thresholds\n• Compression factor adjustment\n• Neural network fine-tuning\n• Performance-quality balance"]
+        
+        MEMORY_ANALYTICS["Memory Usage Analytics\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 SYSTEM METRICS:\n• RSS Memory Usage\n• Virtual Memory Size\n• PyTorch Cache Size\n• Available System Memory\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📈 TIER UTILIZATION:\n• Per-tier item counts\n• Capacity utilization %\n• Access frequency patterns\n• Migration statistics\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎯 OPTIMIZATION TARGETS:\n• Memory efficiency: >80%\n• Access performance: <100ms\n• Compression ratio: >10x\n• System stability: 99.9%"]
+    end
+    
+    %% === INTEGRATION LAYER ===
+    
+    subgraph INTEGRATION["GPT-Ø Model Integration Layer"]
+        MODEL_WRAPPER["Model Forward Pass Wrapper\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 INTEGRATION FEATURES:\n• Automatic cache key generation\n• Hash-based input identification\n• Transparent caching layer\n• Original API preservation\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ OPTIMIZATIONS:\n• Context length management\n• Sparse attention integration\n• Layer-wise caching (every 8th)\n• Importance-based storage\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 BENEFITS:\n• Zero-modification integration\n• Automatic memory optimization\n• Performance acceleration\n• Resource efficiency"]
+        
+        CACHE_INTEGRATION["Activation Caching System\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 CACHING STRATEGY:\n• Input hash-based keys\n• Layer activation storage\n• Intermediate result caching\n• Automatic cache invalidation\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 STORAGE POLICY:\n• Final outputs: Importance 1.0\n• Layer activations: Decreasing\n• Every 8th layer cached\n• Early layers prioritized\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n⚡ PERFORMANCE GAINS:\n• Compute reuse: 60-80%\n• Memory efficiency: 10x\n• Latency reduction: 50%\n• Throughput increase: 3x"]
+    end
+    
+    %% === DATA FLOW CONNECTIONS ===
+    
+    %% Memory Tier Interconnections
+    ULTRA_HOT <--> HOT
+    HOT <--> WARM  
+    WARM <--> COLD
+    COLD <--> FROZEN
+    
+    %% Management System Connections
+    TIER_MONITOR --> ULTRA_HOT
+    TIER_MONITOR --> HOT
+    TIER_MONITOR --> WARM
+    TIER_MONITOR --> COLD
+    TIER_MONITOR --> FROZEN
+    
+    PRESSURE_MONITOR --> TIER_DECISION
+    PRESSURE_MONITOR --> SPARSITY_PREDICTOR
+    PRESSURE_MONITOR --> EMERGENCY_CLEANUP
+    
+    PROMOTION_ENGINE --> ULTRA_HOT
+    PROMOTION_ENGINE --> HOT
+    PROMOTION_ENGINE --> WARM
+    
+    EVICTION_ENGINE --> HOT
+    EVICTION_ENGINE --> WARM
+    EVICTION_ENGINE --> COLD
+    EVICTION_ENGINE --> FROZEN
+    
+    %% Performance Monitoring Connections
+    ULTRA_HOT --> CACHE_STATS
+    HOT --> CACHE_STATS
+    WARM --> CACHE_STATS
+    COLD --> CACHE_STATS
+    FROZEN --> CACHE_STATS
+    
+    HOT_COMPRESSOR --> COMPRESSION_STATS
+    WARM_COMPRESSOR --> COMPRESSION_STATS
+    COLD_COMPRESSOR --> COMPRESSION_STATS
+    QUANTUM_ENCODER --> COMPRESSION_STATS
+    
+    TIER_MONITOR --> MEMORY_ANALYTICS
+    PRESSURE_MONITOR --> MEMORY_ANALYTICS
+    
+    %% Integration Connections
+    MODEL_WRAPPER --> CACHE_INTEGRATION
+    CACHE_INTEGRATION --> ULTRA_HOT
+    CACHE_INTEGRATION --> HOT
+    
+    %% Background Management
+    BACKGROUND_THREAD --> TIER_MONITOR
+    BACKGROUND_THREAD --> PRESSURE_MONITOR
+    BACKGROUND_THREAD --> PROMOTION_ENGINE
+    BACKGROUND_THREAD --> EVICTION_ENGINE
+    
+    %% === STYLING ===
+    
+    %% Memory Tier Styling
+    style ULTRA_HOT fill:#ff4444,stroke:#333,stroke-width:3px,color:#fff
+    style HOT fill:#ff8844,stroke:#333,stroke-width:3px,color:#fff
+    style WARM fill:#ffcc44,stroke:#333,stroke-width:2px,color:#000
+    style COLD fill:#44ccff,stroke:#333,stroke-width:2px,color:#000
+    style FROZEN fill:#4444ff,stroke:#333,stroke-width:3px,color:#fff
+    
+    %% Compression System Styling
+    style HOT_COMPRESSOR fill:#ffaa88,stroke:#666,stroke-width:2px
+    style WARM_COMPRESSOR fill:#ffdd88,stroke:#666,stroke-width:2px
+    style COLD_COMPRESSOR fill:#88ddff,stroke:#666,stroke-width:2px
+    style QUANTUM_ENCODER fill:#8888ff,stroke:#666,stroke-width:2px
+    style LZ4_COMPRESS fill:#88aaff,stroke:#666,stroke-width:2px
+    style QUANTUM_LZ4 fill:#6666ff,stroke:#666,stroke-width:2px
+    
+    %% Attention System Styling
+    style ATTENTION_ROUTER fill:#44ff44,stroke:#333,stroke-width:2px
+    style SPARSITY_PREDICTOR fill:#66ff66,stroke:#333,stroke-width:2px
+    style SPARSE_COMPUTE fill:#88ff88,stroke:#333,stroke-width:2px
+    style ATTENTION_RECONSTRUCT fill:#aaffaa,stroke:#333,stroke-width:2px
+    
+    %% Context System Styling  
+    style CONTEXT_ANALYZER fill:#ff44ff,stroke:#333,stroke-width:2px
+    style CONTEXT_SUMMARIZER fill:#ff66ff,stroke:#333,stroke-width:2px
+    style SUMMARY_QUERIES fill:#ff88ff,stroke:#333,stroke-width:2px
+    style CROSS_ATTENTION fill:#ffaaff,stroke:#333,stroke-width:2px
+    
+    %% Management System Styling
+    style TIER_MONITOR fill:#ffff44,stroke:#333,stroke-width:2px
+    style PRESSURE_MONITOR fill:#ffff66,stroke:#333,stroke-width:2px  
+    style PROMOTION_ENGINE fill:#ffff88,stroke:#333,stroke-width:2px
+    style EVICTION_ENGINE fill:#ffffaa,stroke:#333,stroke-width:2px
+    style BACKGROUND_THREAD fill:#cccc44,stroke:#333,stroke-width:2px
+    style EMERGENCY_CLEANUP fill:#ff6666,stroke:#333,stroke-width:3px,color:#fff
+    
+    %% Performance System Styling
+    style CACHE_STATS fill:#44ffff,stroke:#333,stroke-width:2px
+    style COMPRESSION_STATS fill:#66ffff,stroke:#333,stroke-width:2px
+    style MEMORY_ANALYTICS fill:#88ffff,stroke:#333,stroke-width:2px
+    
+    %% Integration System Styling
+    style MODEL_WRAPPER fill:#cc44cc,stroke:#333,stroke-width:2px
+    style CACHE_INTEGRATION fill:#dd66dd,stroke:#333,stroke-width:2px

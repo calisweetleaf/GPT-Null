@@ -1,0 +1,15 @@
+sequenceDiagram
+    participant User
+    participant InputRouter
+    participant Reasoning Engine
+    participant Transformer
+    participant Output Router
+    participant Modality Generators
+
+    User->>InputRouter: Multimodal Input
+    InputRouter->>Reasoning Engine: Start Reasoning Chain
+    Reasoning Engine-->>InputRouter: Reasoning Context
+    InputRouter->>Transformer: Routed Input + Context
+    Transformer->>Output Router: Final Hidden States
+    Output Router->>Modality Generators: Route to Generator
+    Modality Generators-->>User: Generated Output

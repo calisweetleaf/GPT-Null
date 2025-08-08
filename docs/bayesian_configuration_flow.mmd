@@ -1,0 +1,19 @@
+graph TD
+    A[Interaction] --> B{Performance Evidence Collector};
+    B --> C[Process Evidence];
+    C --> D{RecursiveBayesianUpdater};
+    D --> E[Update ParameterBelief];
+    E --> F(ProbabilisticDistribution);
+    F --> G{BayesianConfigurationOrchestrator};
+    G --> H[Get Parameter Value];
+    H --> I(GPT-Ø Model);
+
+    subgraph "Parameter Evolution"
+        D;
+        E;
+        F;
+    end
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style I fill:#ccf,stroke:#333,stroke-width:2px
+    style G fill:#9cf,stroke:#333,stroke-width:2px

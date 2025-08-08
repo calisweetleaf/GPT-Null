@@ -1,0 +1,19 @@
+graph TD
+    A[Input] --> B(InputRouter);
+    B --> C{Reasoning Engine};
+    C --> D[Transformer w/ MoE];
+    D --> E(OutputRouter);
+    E --> F[Modality-Specific Generators];
+
+    subgraph Core Components
+        G(BayesianConfigurationOrchestrator) -.-> D;
+        H(RecursiveWeightCore) -.-> D;
+        I(NeuralMemoryRuntime) -.-> D;
+    end
+
+    style B fill:#f9f,stroke:#333,stroke-width:2px
+    style E fill:#f9f,stroke:#333,stroke-width:2px
+    style C fill:#ccf,stroke:#333,stroke-width:2px
+    style G fill:#9cf,stroke:#333,stroke-width:2px
+    style H fill:#9cf,stroke:#333,stroke-width:2px
+    style I fill:#9cf,stroke:#333,stroke-width:2px
