@@ -2019,8 +2019,8 @@ class GPT_Ø(nn.Module):
                     sorted_indices_to_remove = cumulative_probs > top_p
                     sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
                     sorted_indices_to_remove[..., 0] = 0
-                    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-                    next_token_logits[:, indices_to_remove] = -float('Inf')
+                    indices_to_remove = torch.zeros_like(next_token_logits, dtype=torch.bool).scatter(1, sorted_indices, sorted_indices_to_remove)
+                    next_token_logits[indices_to_remove] = -float('Inf')
                 
                 next_token = torch.multinomial(F.softmax(next_token_logits, dim=-1), num_samples=1)
                 
