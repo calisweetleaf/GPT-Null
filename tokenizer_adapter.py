@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 # Full modality support from gpt_model.py (13 modalities)
 class ModalityType(Enum):
-    """Complete modality support aligned with gpt_model.py (13 modalities total)"""
+    """Complete modality support aligned with gpt_model.py (15 modalities total)"""
     TEXT = "text"
     STRUCTURED = "structured"  # For code, JSON, YAML, etc.
     IMAGE = "image"
@@ -72,6 +72,8 @@ class ModalityType(Enum):
     CLOCK = "clock"            # Temporal/chronological data streams
     RM_RF = "rm_rf"            # File system operations (with safety mechanisms)
     ADS_B = "ads_b"            # Aircraft tracking and flight data
+    EYES = "eyes"              # ISR (Intelligence, Surveillance, Reconnaissance)
+    EARS = "ears"              # Spatial Domain Processing
 
 class TokenizerAdapter:
     """
@@ -196,6 +198,11 @@ class TokenizerAdapter:
             "<|video_start|>": 50265,
             "<|video_end|>": 50266,
             
+            "<|eyes_start|>": 50303,
+            "<|eyes_end|>": 50304,
+            "<|ears_start|>": 50305,
+            "<|ears_end|>": 50306,
+
             # Reasoning and control tokens
             "<|reasoning_start|>": 50283,
             "<|reasoning_end|>": 50284,
@@ -267,6 +274,14 @@ class TokenizerAdapter:
                 "max_frames": self.config.get("video_max_frames", 100),
                 "frame_sampling": self.config.get("video_frame_sampling", "uniform"),
                 "encoding_method": "frame_sequence"
+            },
+            ModalityType.EYES: {
+                "max_detections": self.config.get("eyes_max_detections", 1024),
+                "encoding_method": "structured_report"
+            },
+            ModalityType.EARS: {
+                "max_signals": self.config.get("ears_max_signals", 2048),
+                "encoding_method": "spatial_grid"
             }
         }
         
@@ -459,6 +474,10 @@ class TokenizerAdapter:
                 tokens = self._process_ads_b_data(data)
             elif modality == ModalityType.VIDEO:
                 tokens = self._process_video_data(data)
+            elif modality == ModalityType.EYES:
+                tokens = self._process_eyes_data(data)
+            elif modality == ModalityType.EARS:
+                tokens = self._process_ears_data(data)
             else:
                 # Generic fallback
                 tokens = self._generic_fallback_tokenization(data)
@@ -524,6 +543,26 @@ class TokenizerAdapter:
             end_token = torch.tensor([self.special_tokens["<|lidar_end|>"]], dtype=torch.long)
             
             return torch.cat([start_token, quantized, end_token]).unsqueeze(0)
+        else:
+            return torch.zeros((1, 1), dtype=torch.long)
+
+    def _process_eyes_data(self, data: Any) -> torch.Tensor:
+        """Process ISR (eyes) data into tokens."""
+        if isinstance(data, dict):
+            # Structured ISR report
+            report_text = json.dumps(data)
+            encoded = self.encode(f"<|eyes_start|>{report_text}<|eyes_end|>")
+            return torch.tensor(encoded, dtype=torch.long).unsqueeze(0)
+        else:
+            return torch.zeros((1, 1), dtype=torch.long)
+
+    def _process_ears_data(self, data: Any) -> torch.Tensor:
+        """Process spatial domain (ears) data into tokens."""
+        if isinstance(data, dict):
+            # Structured spatial intelligence report
+            report_text = json.dumps(data)
+            encoded = self.encode(f"<|ears_start|>{report_text}<|ears_end|>")
+            return torch.tensor(encoded, dtype=torch.long).unsqueeze(0)
         else:
             return torch.zeros((1, 1), dtype=torch.long)
 
