@@ -1272,9 +1272,21 @@ class OutputRouter(nn.Module):
         elif selected_modality == ModalityType.TOOL:
             output_data["tool"] = model.tool_head(hidden_states)
         elif selected_modality == ModalityType.EYES:
-            output_data["eyes"] = model.isr_head(hidden_states, operation_metadata=input_data.get('metadata', {}))
+            eyes_metadata = input_data.get('metadata', {})
+            # Validate required keys for EYES modality
+            required_eyes_keys = {"sensor_type", "timestamp"}
+            missing_eyes_keys = required_eyes_keys - eyes_metadata.keys()
+            if missing_eyes_keys:
+                raise ValueError(f"Missing required EYES metadata keys: {missing_eyes_keys}")
+            output_data["eyes"] = model.isr_head(hidden_states, operation_metadata=eyes_metadata)
         elif selected_modality == ModalityType.EARS:
-            output_data["ears"] = model.spatial_head(hidden_states, spatial_metadata=input_data.get('metadata', {}))
+            ears_metadata = input_data.get('metadata', {})
+            # Validate required keys for EARS modality
+            required_ears_keys = {"location", "frequency"}
+            missing_ears_keys = required_ears_keys - ears_metadata.keys()
+            if missing_ears_keys:
+                raise ValueError(f"Missing required EARS metadata keys: {missing_ears_keys}")
+            output_data["ears"] = model.spatial_head(hidden_states, spatial_metadata=ears_metadata)
         else:
             # Default to text generation if the modality is not explicitly handled
             output_data["text"] = model.text_decoder(hidden_states)
