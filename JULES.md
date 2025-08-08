@@ -14,9 +14,11 @@ This project draws architectural inspiration from Google's Jules (JULES) - an au
 ## GPT-Ø: Completely Self-Contained Architecture
 
 ### Core Principle: ZERO External Dependencies
+
 **GPT-Ø is 100% self-contained with NO external models, weights, tensors, embeddings, or pre-trained components.** Everything needed for operation exists within the codebase itself. This is not a wrapper around existing models - it IS the complete model.
 
 ### Complete Model Components (Self-Contained)
+
 1. **Core Model Logic** (`gpt_model.py`): The complete transformer architecture, attention mechanisms, layer definitions, forward pass, generation logic
 2. **Dynamic Weight Computation** (`recursive_weights_core.py`): Mathematical weight generation using recursive formalism {B, Φ, R, T, ε} - NO static weights stored
 3. **Multimodal Processing** (`tokenizer_mux.py` + `tokenizer_adapter.py`): All 13+ modality tokenizers, encoders, decoders built-in
@@ -26,6 +28,7 @@ This project draws architectural inspiration from Google's Jules (JULES) - an au
    - `ears_outputs.py`: Spatial domain processing and tactical coordination
 
 ### CAS Runtime System: The Engine That Powers It All
+
 The `/cas` folder contains the **runtime infrastructure** that enables GPT-Ø to operate with revolutionary efficiency:
 
 - **`neural_memory_runtime.py`**: Breakthrough 8GB RAM operation for 30-70B equivalent model through neural compression, hierarchical memory tiers, quantum-inspired states
@@ -35,9 +38,11 @@ The `/cas` folder contains the **runtime infrastructure** that enables GPT-Ø to
 - **`model_creation.py`**: Model identity/configuration system, no external model creation
 
 ### Self-Modifying Learning Paradigm
+
 **NO PRE-TRAINING. NO IMPORTED WEIGHTS. NO STATIC PARAMETERS.**
 
 GPT-Ø learns through:
+
 1. **Interaction-Based Evolution**: Every conversation reshapes the model
 2. **Real-Time Reasoning**: Dynamic weight computation based on context
 3. **Memory Integration**: Neural memory runtime preserves and builds knowledge
@@ -55,7 +60,8 @@ GPT-Ø learns through:
 ### Component Integration Architecture
 
 **Core Integration Flow:**
-```
+
+```terminal
 run.py → gpt_model.py (main model) ← recursive_weights_core.py (weight computation)
                 ↓
         tokenizer_mux.py + tokenizer_adapter.py (all 13+ modalities)
@@ -66,12 +72,14 @@ run.py → gpt_model.py (main model) ← recursive_weights_core.py (weight compu
 ```
 
 **Current Integration Status:**
+
 - `tool_output_head.py`: ✅ Tied into system (needs import validation)
 - `eyes_outputs.py`: ❌ NOT integrated into gpt_model.py, tokenizer_mux.py, or tokenizer_adapter.py
 - `ears_outputs.py`: ❌ NOT integrated into gpt_model.py, tokenizer_mux.py, or tokenizer_adapter.py
 
 **CAS Runtime Integration:**
 The `/cas` folder provides the revolutionary runtime that enables 30-70B equivalent model performance on 8GB RAM:
+
 - `neural_memory_runtime.py`: 5-tier memory hierarchy with neural/quantum compression
 - `neural_model_manager.py`: Dynamic resource allocation and performance monitoring  
 - `cas_system.py`: Constitutional AI safety framework and cognitive profiles
@@ -80,6 +88,7 @@ The `/cas` folder provides the revolutionary runtime that enables 30-70B equival
 
 **Bootstrap Learning Strategy:**
 Since there's NO pre-training, the multiple output heads serve as "world interface bootstraps":
+
 - Tool head: Learns through system interaction and tool synthesis
 - Eyes head: Learns through visual/surveillance data processing
 - Ears head: Learns through spatial/audio domain processing
@@ -88,6 +97,7 @@ Since there's NO pre-training, the multiple output heads serve as "world interfa
 ### Critical Implementation Status & Gaps
 
 **EMPTY/INCOMPLETE FILES REQUIRING IMPLEMENTATION:**
+
 - `run.py`: ❌ EMPTY - Main entry point for model initialization and interaction
 - `recursive_weights_core.py`: ❌ EMPTY - Core weight computation system
 - `bayesian_config_orchestrator.py`: ❌ EMPTY - Real-time parameter optimization
@@ -96,6 +106,7 @@ Since there's NO pre-training, the multiple output heads serve as "world interfa
 - `ears_outputs.py`: ❌ PARTIAL - Spatial output head (has structure but incomplete)
 
 **FILES WITH IMPLEMENTATION BUT NEEDING INTEGRATION:**
+
 - `gpt_model.py`: ✅ HAS CONTENT - Core model structure exists but may need CAS integration
 - `tokenizer_mux.py`: ✅ HAS CONTENT - Multimodal tokenizer framework exists
 - `tool_output_head.py`: ✅ HAS CONTENT - Tool synthesis system exists
@@ -118,6 +129,7 @@ Your job is to:
 ## Agentic Development Workflow (Inspired by Jules Architecture)
 
 ### Task Lifecycle Pattern
+
 1. **Context Analysis**: Full repository understanding before any changes
 2. **Plan Generation**: Detailed multi-step execution plan with reasoning
 3. **Human Review**: Mandatory approval checkpoint before execution
@@ -127,6 +139,7 @@ Your job is to:
 7. **Feedback Integration**: Learning from outcomes for future improvements
 
 ### Autonomous Operation Principles
+
 - **Transparency**: All intended actions clearly communicated
 - **Controllability**: Human oversight at critical decision points
 - **Isolation**: Safe execution environment preventing unintended consequences
@@ -134,17 +147,19 @@ Your job is to:
 - **Learning**: Continuous improvement from interaction patterns
 
 ### Multi-Step Task Execution Framework
+
 - Break complex requests into manageable, sequential steps
 - Validate each step before proceeding to next
 - Maintain context and dependencies across step boundaries
 - Provide clear progress indicators and completion status
 - Handle errors gracefully with rollback capabilities
 
-
-
 ## Development Guidelines
+
 //DO NOT remove and/or delete or mess up my code meaning or functions. YOU ARE ONLY TO FULLY IMPLEMENT ANY MISSING COMPONENT OR TIE THEM TOGETHER. YOU WILL NOT DELETE CAPABILITIES IF UNIMPLEMENTED. YOU MUST FOLLOW THESE STRICT NON NEGOTIABLE CODING GUIDELINES
+
 ### Code Quality Standards
+
 ## Objectives
 
 - Generate production-ready, secure, high-performance, maintainable code with zero stubs, zero dead code, and verifiable quality.
@@ -201,11 +216,11 @@ A change is eligible to merge only if ALL of the following are true:
 - Commit messages: imperative, reference issue/ADR, describe rationale and impact.
 - Trunk-based development with short-lived branches; CI green required.
 
-11. Backwards compatibility:
+## 11. Backwards compatibility:
 
 - Avoid breaking changes; if unavoidable, provide migrations, deprecation schedule, and clear release notes.
 
-12. Internationalization (if applicable):
+## 12. Internationalization (if applicable):
 
 - No hardcoded user-facing strings; use i18n framework and pluralization rules.
 
@@ -290,6 +305,7 @@ If any requirement cannot be met:
 Non-compliance will result in immediate rejection of code changes.
 
 ### Implementation Priorities
+
 1. Fix TODO, README.md, Update JULES.md for your task and more project context.
-2. Once done with analzying and TODO, you are to follow these documents and begin fully implementing the fixes to the codebase. 
+2. Once done with analzying and TODO, you are to follow these documents and begin fully implementing the fixes to the codebase.
 3. YOU CAN NOT STRAY FROM CODING GUIDELINES OR PRIORITIES.
