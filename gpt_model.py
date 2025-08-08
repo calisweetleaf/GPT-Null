@@ -1940,12 +1940,23 @@ class GPT_Ø(nn.Module):
 
         # --- CAS Integration ---
         self.cas_parser = CASParser()
-        cas_spec, errors, warnings = self.cas_parser.parse_file(Path("config/cas_specification.yaml"))
-        if errors:
-            raise RuntimeError(f"CAS Specification failed to load: {errors}")
-        if warnings:
-            logger.warning(f"CAS Specification warnings: {warnings}")
-        self.constitutional_governor = ConstitutionalGovernor(cas_spec.constitutional_framework)
+        cas_spec_path = Path("config/cas_specification.yaml")
+        if not cas_spec_path.exists():
+            logger.error(f"CAS Specification file not found at {cas_spec_path.resolve()}. CAS integration will be skipped.")
+            self.constitutional_governor = None
+        else:
+            try:
+                cas_spec, errors, warnings = self.cas_parser.parse_file(cas_spec_path)
+                if errors:
+                    logger.error(f"CAS Specification failed to load: {errors}. Please check the YAML file for syntax or schema issues.")
+                    self.constitutional_governor = None
+                else:
+                    if warnings:
+                        logger.warning(f"CAS Specification warnings: {warnings}")
+                    self.constitutional_governor = ConstitutionalGovernor(cas_spec.constitutional_framework)
+            except Exception as e:
+                logger.error(f"Exception occurred while loading CAS Specification: {e}. CAS integration will be skipped.")
+                self.constitutional_governor = None
 
         # Multi-modal reasoning state
         self.active_modalities: Set[ModalityType] = set()
