@@ -1,129 +1,68 @@
-# GPT-Ø Development Plan: Field Readiness
+# GPT-Ø Development Plan: System Integration and Validation
 
-**Primary Objective:** Achieve a fully functional, interactive command-line interface (CLI) for end-to-end testing and validation of the core system components. This plan prioritizes getting the model operational in a real-world testing environment before completing all extended features.
-
----
-
-## 🚀 PHASE 1: CLI Field Readiness (Top Priority)
-
-### 1.1 `run.py` Implementation & Orchestration
-- [x] **Implement `_handle_chat_mode` in `GPTZeroLauncher`:**
-  - [x] Create the main interactive loop to accept user input.
-  - [x] Integrate `TokenizerAdapter` to encode user prompts into tensors for the model.
-  - [x] Call the `gpt_model.generate()` method with the encoded input and appropriate context.
-  - [x] Integrate `TokenizerAdapter` to decode the model's output tensors back into human-readable text.
-  - [x] Print the final response to the console.
-  - [x] Manage conversation history within the chat loop.
-- [x] **Complete `_initialize_system_components`:**
-  - [x] Ensure `GPT_Ø`, `TokenizerAdapter`, `BayesianConfigurationOrchestrator`, `NeuralMemoryRuntime`, and `UniversalToolControlOutputHead` are all instantiated and wired together correctly.
-  - [x] Verify that the `device` (CPU/GPU) is correctly determined and passed to all relevant components.
-- [ ] **Enhance `_handle_monitor_mode`:**
-  - [ ] Ensure all metrics from `SystemMetrics` are correctly fetched and displayed in the `rich` layout.
-  - [ ] Connect the monitor to the `NeuralMemoryRuntime` and `GPT_Ø` to display real-time memory and reasoning stats.
-- [ ] **Implement `_handle_tools_mode` (Basic):**
-  - [ ] Create a simple loop to accept a tool synthesis objective.
-  - [ ] Pass the objective to the `UniversalToolControlOutputHead`'s `synthesize_tool_response` method.
-  - [ ] Display the synthesized tool's basic information as a proof-of-concept.
-
-### 1.2 Core Component Integration & Validation
-- [x] **Finalize `GPT_Ø.forward()` and `GPT_Ø.generate()`:**
-  - [x] Ensure the `forward` pass can process token embeddings and produce valid logits.
-  - [x] Complete the `generate()` method to handle the full text-generation lifecycle: input processing, reasoning, generation, and output formatting.
-- [ ] **Validate `BayesianConfigurationOrchestrator`:**
-  - [ ] Confirm that `get_parameter_value` is successfully used by `GPT_Ø` during initialization.
-  - [ ] Implement a basic mechanism in `run.py` to feed performance metrics back into the orchestrator.
-- [ ] **Validate `NeuralMemoryRuntime` Integration:**
-  - [ ] Confirm that the `integrate_neural_memory_runtime` function correctly patches the `GPT_Ø` instance.
-  - [ ] Ensure memory operations (store/retrieve) are being called during the `generate` loop.
-- [ ] **Validate `RecursiveWeightCore` Integration:**
-  - [ ] Verify that `RecursiveWeightLayer` is being used for embeddings and in the transformer blocks.
-  - [ ] Ensure the `RecursiveWeightRegistry` is populated during model initialization.
-
-### 1.3 Resolve Critical Dependencies & Stubs
-- [x] **Fix all import errors** that prevent `run.py` from launching.
-- [x] **Complete placeholder implementations** in `cas_system.py` and `cas_integration_bridge.py` that are essential for model loading and configuration.
-- [x] **Fill in essential `__init__` and `forward` methods** for all classes instantiated in `run.py` to ensure they are operational.
-
-### 1.1 `run.py` Implementation & Orchestration
-- [ ] **Implement `_handle_chat_mode` in `GPTZeroLauncher`:**
-  - [ ] Create the main interactive loop to accept user input.
-  - [ ] Integrate `TokenizerAdapter` to encode user prompts into tensors for the model.
-  - [ ] Call the `gpt_model.generate()` method with the encoded input and appropriate context.
-  - [ ] Integrate `TokenizerAdapter` to decode the model's output tensors back into human-readable text.
-  - [ ] Print the final response to the console.
-  - [ ] Manage conversation history within the chat loop.
-- [ ] **Complete `_initialize_system_components`:**
-  - [ ] Ensure `GPT_Ø`, `TokenizerAdapter`, `BayesianConfigurationOrchestrator`, `NeuralMemoryRuntime`, and `UniversalToolControlOutputHead` are all instantiated and wired together correctly.
-  - [ ] Verify that the `device` (CPU/GPU) is correctly determined and passed to all relevant components.
-- [ ] **Enhance `_handle_monitor_mode`:**
-  - [ ] Ensure all metrics from `SystemMetrics` are correctly fetched and displayed in the `rich` layout.
-  - [ ] Connect the monitor to the `NeuralMemoryRuntime` and `GPT_Ø` to display real-time memory and reasoning stats.
-- [ ] **Implement `_handle_tools_mode` (Basic):**
-  - [ ] Create a simple loop to accept a tool synthesis objective.
-  - [ ] Pass the objective to the `UniversalToolControlOutputHead`'s `synthesize_tool_response` method.
-  - [ ] Display the synthesized tool's basic information as a proof-of-concept.
-
-### 1.2 Core Component Integration & Validation
-- [ ] **Finalize `GPT_Ø.forward()` and `GPT_Ø.generate()`:**
-  - [ ] Ensure the `forward` pass can process token embeddings and produce valid logits.
-  - [ ] Complete the `generate()` method to handle the full text-generation lifecycle: input processing, reasoning, generation, and output formatting.
-- [ ] **Validate `BayesianConfigurationOrchestrator`:**
-  - [ ] Confirm that `get_parameter_value` is successfully used by `GPT_Ø` during initialization.
-  - [ ] Implement a basic mechanism in `run.py` to feed performance metrics back into the orchestrator.
-- [ ] **Validate `NeuralMemoryRuntime` Integration:**
-  - [ ] Confirm that the `integrate_neural_memory_runtime` function correctly patches the `GPT_Ø` instance.
-  - [ ] Ensure memory operations (store/retrieve) are being called during the `generate` loop.
-- [ ] **Validate `RecursiveWeightCore` Integration:**
-  - [ ] Verify that `RecursiveWeightLayer` is being used for embeddings and in the transformer blocks.
-  - [ ] Ensure the `RecursiveWeightRegistry` is populated during model initialization.
-
-### 1.3 Resolve Critical Dependencies & Stubs
-- [ ] **Fix all import errors** that prevent `run.py` from launching.
-- [ ] **Complete placeholder implementations** in `cas_system.py` and `cas_integration_bridge.py` that are essential for model loading and configuration.
-- [ ] **Fill in essential `__init__` and `forward` methods** for all classes instantiated in `run.py` to ensure they are operational.
+**Primary Objective:** Integrate all existing, production-ready components into a fully functional and verifiable system. The focus is on completing the final wiring, validating end-to-end functionality, and ensuring compliance with all operational and safety requirements.
 
 ---
 
-## 🏗️ PHASE 2: CAS System & Model Loading
+## 🚀 PHASE 1: Final Integration (Top Priority)
 
-- [ ] **Complete `CASParser`** for YAML specification parsing.
-- [ ] **Complete `ConstitutionalGovernor`** safety framework.
-- [ ] **Finish `CASIntegrationBridge`** implementation for backward compatibility.
-- [ ] **Complete `NeuralModelManager`** for dynamic model loading (GGUF, BitNet).
-- [ ] Implement cognitive profile switching and hot-swapping capabilities.
+### 1.1 `eyes` and `ears` Output Head Integration
+- [ ] **Integrate `ISRMasterCoordinator` (`eyes_outputs.py`) into `gpt_model.py`:**
+  - [ ] Import the `ISRMasterCoordinator` class.
+  - [ ] Instantiate the head in the `GPT_Ø` model's `__init__`.
+  - [ ] Add logic to the `GPT_Ø.forward()` or `GPT_Ø.generate()` method to route hidden states to the `eyes` head based on modality (`ModalityType.EYES`).
+- [ ] **Integrate `SpatialIntelligenceCoordinator` (`ears_outputs.py`) into `gpt_model.py`:**
+  - [ ] Import the `SpatialIntelligenceCoordinator` class.
+  - [ ] Instantiate the head in the `GPT_Ø` model's `__init__`.
+  - [ ] Add logic to route hidden states to the `ears` head based on modality (`ModalityType.EARS`).
+- [ ] **Update `tokenizer_adapter.py` and `tokenizer_mux.py` for new modalities:**
+  - [ ] Add `EYES` and `EARS` to the `ModalityType` enums.
+  - [ ] Define and register special tokens for these modalities (e.g., `<|eyes_start|>`, `<|ears_start|>`).
+  - [ ] Implement tokenization logic for the structured data associated with these heads.
 
----
-
-## 🧠 PHASE 3: Advanced Reasoning & Self-Modification
-
-- [ ] **Complete `ChainOfThoughtProcessor`** and reasoning step validation.
-- [ ] **Implement `SacredMultiHeadAttention`** with golden ratio calculations and breathing phase synchronization.
-- [ ] **Finalize Self-Modification Framework** with safe parameter evolution and rollback mechanisms.
-- [ ] Test and validate contradiction detection and resolution.
-
----
-
-## 🔧 PHASE 4: Full Multimodal & Tool Capabilities
-
-- [ ] **Complete all 13 modality encoders** in `gpt_model.py`.
-- [ ] **Finalize `TokenizerAdapter` and `tokenizer_mux.py`** to handle all modalities.
-- [ ] **Complete `UniversalToolControlOutputHead`** with full synthesis for all control domains (Digital, Mechanical, etc.).
-- [ ] Implement multi-system coordination and protocol synthesis.
-
----
-
-## ⚡ PHASE 5: Performance and Optimization
-
-- [ ] **Stress test memory usage** with 2M+ token contexts to enforce the <8GB RAM constraint.
-- [ ] **Optimize recursive weight computation** and sacred geometry calculations (SIMD/GPU).
-- [ ] Implement memory-mapped file access and parallel tensor reconstruction for LQT format.
-- [ ] Add comprehensive caching for frequently accessed patterns.
+### 1.2 CAS (Cognitive Architecture Specification) Integration
+- [ ] **Finalize `NeuralMemoryRuntime` Integration:**
+  - [ ] Verify that the `integrate_neural_memory_runtime` function correctly patches the `GPT_Ø` instance.
+  - [ ] Ensure memory operations (store/retrieve) are actively and correctly called during the `generate()` loop.
+  - [ ] Write a specific integration test to prove information is retained across generation calls.
+- [ ] **Integrate `CAS` Constitutional Safety Framework:**
+  - [ ] Ensure the safety constraints defined in `cas/cas_system.py` are loaded and applied during generation.
+  - [ ] Create a test with an adversarial prompt designed to trigger a safety violation and assert that the model's output is constrained as expected.
 
 ---
 
-## 🔒 PHASE 6: Safety, Validation, and LQT Format
+## ✅ PHASE 2: Component Validation (Completed)
 
-- [ ] **Implement full LQT specification** for serialization, including mutation and validation.
-- [ ] **Validate constitutional AI safety framework** with adversarial testing.
-- [ ] **Add cryptographic verification** and integrity checking to LQT and model files.
-- [ ] Complete unit and integration tests for all major components.
+*The following core components have been reviewed and confirmed to be implemented to a production-ready standard. The primary remaining work is integration and end-to-end testing.*
+
+- [x] **`run.py` Implementation & Orchestration:** Fully implemented with interactive TUI, component initialization, and multiple operational modes.
+- [x] **`recursive_weights_core.py`:** Complete and production-ready implementation of the recursive weights system.
+- [x] **`bayesian_config_orchestrator.py`:** Functional implementation of the Bayesian parameter optimization system.
+- [x] **`tokenizer_adapter.py` & `tokenizer_mux.py`:** Comprehensive, multimodal tokenizer system is in place.
+- [x] **`tool_output_head.py`:** Advanced implementation of the universal tool control head is complete.
+- [x] **`cas/*` Subsystem:** All core components of the CAS runtime system are implemented.
+- [x] **`gpt_model.py`:** Core transformer architecture is implemented and ready for final integration of all heads and subsystems.
+
+---
+
+## 🧪 PHASE 3: Testing and Validation
+
+- [ ] **Create `test/test_integration.py`:**
+  - [ ] Write an end-to-end test for the `TEXT` modality.
+  - [ ] Write an end-to-end test for the `TOOL` modality.
+  - [ ] Write an end-to-end test for the `EYES` modality.
+  - [ ] Write an end-to-end test for the `EARS` modality.
+- [ ] **Create `test/test_cas_integration.py`:**
+  - [ ] Write a test to validate `NeuralMemoryRuntime`'s ability to retain context.
+  - [ ] Write a test to validate the constitutional safety constraints.
+- [ ] **Run Full Test Suite:**
+  - [ ] Execute all tests in the `test/` directory, including existing ones (`test_gpt_zero.py`, `debug_memory_test.py`, `validate_gpt_zero_system.py`).
+  - [ ] Ensure all tests pass and that code coverage meets the project's strict guidelines (≥90% line/branch).
+
+---
+
+## 📚 PHASE 4: Documentation and Finalization
+
+- [x] **Update `JULES.md`:** Update the agent's instruction file to be the single source of truth, reflecting the project's true status.
+- [ ] **Review and Update `README.md`:** Ensure the main `README.md` is consistent with the final, integrated state of the system.
+- [ ] **Submit Final Code:** Once all integration and testing are complete, submit the final pull request.

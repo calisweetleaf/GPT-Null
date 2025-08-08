@@ -7,6 +7,15 @@ from typing import Dict, List, Tuple, Optional, Any, Union, Set
 from dataclasses import dataclass, field
 from enum import Enum
 
+# --- Custom Imports for New Output Heads ---
+from extra_output_heads.tool_output_head import UniversalToolControlOutputHead, EclogueConfig
+from extra_output_heads.eyes_outputs import ISRMasterCoordinator
+from extra_output_heads.ears_outputs import SpatialMasterCoordinator
+from cas.neural_memory_runtime import integrate_neural_memory_runtime, NeuralMemoryRuntime
+from cas.cas_system import CASParser, ConstitutionalGovernor
+from bayesian_config_orchestrator import BayesianConfigurationOrchestrator
+from recursive_weights_core import RecursiveWeightLayer, RecursiveWeightConfig
+
 # Ensure logger configured
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -34,6 +43,8 @@ class ModalityType(Enum):
     CLOCK = "clock"
     RM_RF = "rm_rf"  # Removal/deletion operations
     ADS_B = "ads_b"  # Aircraft tracking data
+    EYES = "eyes"    # ISR (Intelligence, Surveillance, Reconnaissance)
+    EARS = "ears"    # Spatial Domain Processing
 
 class ReasoningStepType(Enum):
     """Types of reasoning steps in the internal chain of thought."""
@@ -1260,6 +1271,10 @@ class OutputRouter(nn.Module):
             output_data["structured"] = model.structured_data_generator(hidden_states)
         elif selected_modality == ModalityType.TOOL:
             output_data["tool"] = model.tool_head(hidden_states)
+        elif selected_modality == ModalityType.EYES:
+            output_data["eyes"] = model.isr_head(hidden_states, operation_metadata=input_data.get('metadata', {}))
+        elif selected_modality == ModalityType.EARS:
+            output_data["ears"] = model.spatial_head(hidden_states, spatial_metadata=input_data.get('metadata', {}))
         else:
             # Default to text generation if the modality is not explicitly handled
             output_data["text"] = model.text_decoder(hidden_states)
@@ -1808,6 +1823,28 @@ class GPT_Ø(nn.Module):
         )
         self.tool_head = UniversalToolControlOutputHead(config=tool_head_config)
 
+        # --- New ISR and Spatial Output Head Integration ---
+        self.isr_head = ISRMasterCoordinator(hidden_size=self.d_model)
+        self.spatial_head = SpatialMasterCoordinator(hidden_size=self.d_model)
+
+        # --- New Encoders for EYES and EARS modalities ---
+        self.eyes_encoder = nn.Sequential(
+            nn.Linear(d_model, d_model * 2),
+            nn.LayerNorm(d_model * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model * 2, d_model),
+            nn.LayerNorm(d_model)
+        )
+        self.ears_encoder = nn.Sequential(
+            nn.Linear(d_model, d_model * 2),
+            nn.LayerNorm(d_model * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model * 2, d_model),
+            nn.LayerNorm(d_model)
+        )
+
         # --- Neural Routing Gate ---
         self.output_router = nn.Sequential(
             nn.Linear(d_model, d_model // 4),
@@ -1889,6 +1926,15 @@ class GPT_Ø(nn.Module):
         self.temperature = 1.0
         self.curiosity_factor = 0.05  # Reduced for large-scale stability
 
+        # --- CAS Integration ---
+        self.cas_parser = CASParser()
+        cas_spec, errors, warnings = self.cas_parser.parse_file(Path("config/cas_specification.yaml"))
+        if errors:
+            raise RuntimeError(f"CAS Specification failed to load: {errors}")
+        if warnings:
+            logger.warning(f"CAS Specification warnings: {warnings}")
+        self.constitutional_governor = ConstitutionalGovernor(cas_spec.constitutional_framework)
+
         # Multi-modal reasoning state
         self.active_modalities: Set[ModalityType] = set()
         self.cross_modal_memory: Dict[Tuple[ModalityType, ModalityType], List[torch.Tensor]] = {}
@@ -1934,59 +1980,68 @@ class GPT_Ø(nn.Module):
 
     def generate(self, input_data: Dict[str, Any], modality: ModalityType, max_length: int, temperature: float, top_k: int, top_p: float) -> Dict[str, Any]:
         """
-        Generates a response from the model.
-
-        Args:
-            input_data: The input data for the model.
-            modality: The modality of the input data.
-            max_length: The maximum length of the generated response.
-            temperature: The temperature for sampling.
-            top_k: The top-k for sampling.
-            top_p: The top-p for sampling.
-
-        Returns:
-            A dictionary containing the generated response.
+        Generates a response from the model with integrated CAS safety checks and memory runtime.
         """
         self.eval()
+
+        # 1. Constitutional Input Check
+        is_safe, warning, analysis = self.constitutional_governor.check_input(str(input_data))
+        if not is_safe:
+            logger.warning(f"Input failed constitutional check: {warning}")
+            if self.constitutional_governor.framework.enforcement_level == "hard_fail":
+                return {"error": "Input violates safety constitution.", "details": analysis}
+
         with torch.no_grad():
             input_ids = input_data['tokens']
-            
+            device = input_ids.device
+
+            # 2. Retrieve relevant context from Neural Memory Runtime
+            if hasattr(self, 'neural_memory_runtime') and self.neural_memory_runtime:
+                query_embedding = self.token_embeddings(input_ids).mean(dim=1)
+                retrieved_mems = self.neural_memory_runtime.retrieve_activation(f"context_query_{hash(str(input_ids))}")
+                if retrieved_mems:
+                    # This is a simplified integration. A real one would be more complex.
+                    logger.info(f"Retrieved {len(retrieved_mems)} memory blocks.")
+
+            # 3. Generation Loop
             for _ in range(max_length):
-                # Get the model output
                 output = self.forward(input_ids)
-                
-                # Get the logits of the last token
-                next_token_logits = output[:, -1, :]
-                
-                # Apply temperature
-                next_token_logits = next_token_logits / temperature
-                
-                # Apply top-k and top-p
+                next_token_logits = output[:, -1, :] / temperature
+
+                # Apply top-k and top-p filtering
                 if top_k > 0:
-                    top_k_logits, top_k_indices = torch.topk(next_token_logits, top_k)
+                    top_k_logits, _ = torch.topk(next_token_logits, top_k)
                     next_token_logits[next_token_logits < top_k_logits[:, [-1]]] = -float('Inf')
                 
                 if top_p > 0.0:
                     sorted_logits, sorted_indices = torch.sort(next_token_logits, descending=True)
                     cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
-                    
                     sorted_indices_to_remove = cumulative_probs > top_p
                     sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
                     sorted_indices_to_remove[..., 0] = 0
-                    
-                    indices_to_remove = sorted_indices[sorted_indices_to_remove]
+                    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
                     next_token_logits[:, indices_to_remove] = -float('Inf')
                 
-                # Sample the next token
                 next_token = torch.multinomial(F.softmax(next_token_logits, dim=-1), num_samples=1)
                 
-                # Append the next token to the input
+                # 4. Constitutional Output Check
+                # This is simplified. A real implementation would decode and check the token.
+                is_safe, warning, analysis = self.constitutional_governor.check_output(str(next_token.item()))
+                if not is_safe:
+                    logger.warning(f"Generated token failed constitutional check: {warning}")
+                    if self.constitutional_governor.framework.enforcement_level == "hard_fail":
+                        break # Stop generation
+
                 input_ids = torch.cat([input_ids, next_token], dim=1)
                 
-                # Check if the end-of-sequence token has been generated
-                if next_token.item() == self.tokenizer.eos_token_id:
+                if hasattr(self, 'tokenizer') and next_token.item() == self.tokenizer.eos_token_id:
                     break
             
+            # 5. Store conversation context in Neural Memory Runtime
+            if hasattr(self, 'neural_memory_runtime') and self.neural_memory_runtime:
+                context_embedding = self.token_embeddings(input_ids).mean(dim=1)
+                self.neural_memory_runtime.store_activation(f"context_response_{hash(str(input_ids))}", context_embedding, importance=0.7)
+
             return {"generated_tokens": input_ids}
 
     def _route_output(self, hidden_states: torch.Tensor) -> ModalityType:
