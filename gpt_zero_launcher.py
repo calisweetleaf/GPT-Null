@@ -242,45 +242,45 @@ class SomnusGPTZeroLauncher:
         components = status.get('components', {})
         
         table.add_row(
-            "🧠 GPT-Ø Model",
-            "✅ Active" if components.get('gpt_model') else "❌ Failed",
+            "GPT-Ø Model",
+            "Active" if components.get('gpt_model') else "Failed",
             "33B+ parameter self-modifying transformer"
         )
         
         table.add_row(
-            "🧬 Neural Memory",
-            "✅ Active" if components.get('neural_memory') else "❌ Failed", 
+            "Neural Memory",
+            "Active" if components.get('neural_memory') else "Failed", 
             "5-tier hierarchical memory system"
         )
         
         table.add_row(
-            "⚖️ Constitutional AI",
-            "✅ Active" if components.get('constitutional_governor') else "❌ Failed",
+            "Constitutional AI",
+            "Active" if components.get('constitutional_governor') else "Failed",
             "Safety and compliance framework"
         )
         
         table.add_row(
-            "🔄 GGUF Assimilator",
-            "✅ Active" if components.get('gguf_assimilator') else "❌ Failed",
+            "GGUF Assimilator",
+            "Active" if components.get('gguf_assimilator') else "Failed",
             "Universal model assimilation system"
         )
         
         # Output heads
         output_heads = components.get('output_heads', {})
-        tool_status = "✅ Active" if output_heads.get('tool_head') else "❌ Failed"
-        isr_status = "✅ Active" if output_heads.get('isr_head') else "❌ Failed"
-        spatial_status = "✅ Active" if output_heads.get('ears_head') else "❌ Failed"
-        
-        table.add_row("🔧 Tool Head", tool_status, "Universal tool synthesis")
-        table.add_row("👁️ ISR Head", isr_status, "Intelligence & surveillance")
-        table.add_row("🌍 Spatial Head", spatial_status, "Spatial domain processing")
+        tool_status = "Active" if output_heads.get('tool_head') else "Failed"
+        isr_status = "Active" if output_heads.get('isr_head') else "Failed"
+        spatial_status = "Active" if output_heads.get('ears_head') else "Failed"
+
+        table.add_row("Tool Head", tool_status, "Universal tool synthesis")
+        table.add_row("ISR Head", isr_status, "Intelligence & surveillance")
+        table.add_row("Spatial Head", spatial_status, "Spatial domain processing")
         
         console.print(table)
         
         # Display memory information
         memory_info = status.get('performance_metrics', {}).get('memory_usage', {})
         if memory_info:
-            console.print(f"\n💾 Memory Usage: {memory_info}")
+            console.print(f"\nMemory Usage: {memory_info}")
         
         # Display startup time
         if self.start_time:
