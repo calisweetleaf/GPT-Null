@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 # Full modality support from gpt_model.py (13 modalities)
 class ModalityType(Enum):
-    """Complete modality support aligned with gpt_model.py (13 modalities total)"""
+    """Supported data modalities."""
     TEXT = "text"
     STRUCTURED = "structured"  # For code, JSON, YAML, etc.
     IMAGE = "image"
@@ -66,12 +66,15 @@ class ModalityType(Enum):
     VIDEO = "video"
     TOOL = "tool"
     EMBEDDING = "embedding"
-    LIVE_WEB = "live_web"      # Real-time web content processing
-    LIDAR = "lidar"            # 3D spatial point cloud data
-    GPS = "gps"                # Geographic coordinate systems
-    CLOCK = "clock"            # Temporal/chronological data streams
-    RM_RF = "rm_rf"            # File system operations (with safety mechanisms)
-    ADS_B = "ads_b"            # Aircraft tracking and flight data
+    LIVE_WEB = "live_web"
+    LIDAR = "lidar"
+    GPS = "gps"
+    CLOCK = "clock"
+    RM_RF = "rm_rf"  # Removal/deletion operations
+    ADS_B = "ads_b"  # Aircraft tracking data
+    EYES = "eyes"  # Structured data from the vision system
+    EARS = "ears"  # Structured data from the audio system
+    SPATIAL = "spatial" # Coordinated spatial sensor data
 
 class TokenizerAdapter:
     """

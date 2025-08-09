@@ -123,14 +123,23 @@ class ExternalServiceError(TokenizerError):
   super().__init__(message, TokenizerErrorCode.EXTERNAL_SERVICE_ERROR, details)
 
 class ModalityType(Enum):
-    """Supported input modalities for tokenization."""
+    """Supported data modalities."""
     TEXT = "text"
-    STRUCTURED = "structured"
+    STRUCTURED = "structured"  # For code, JSON, YAML, etc.
     IMAGE = "image"
     AUDIO = "audio"
     VIDEO = "video"
     TOOL = "tool"
     EMBEDDING = "embedding"
+    LIVE_WEB = "live_web"
+    LIDAR = "lidar"
+    GPS = "gps"
+    CLOCK = "clock"
+    RM_RF = "rm_rf"  # Removal/deletion operations
+    ADS_B = "ads_b"  # Aircraft tracking data
+    EYES = "eyes"  # Structured data from the vision system
+    EARS = "ears"  # Structured data from the audio system
+    SPATIAL = "spatial" # Coordinated spatial sensor data
 
 class CircuitBreakerState(Enum):
  """Circuit breaker states."""
