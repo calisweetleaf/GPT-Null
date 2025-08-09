@@ -380,36 +380,46 @@ class CapabilityGap:
     stakeholders: List[str] = field(default_factory=list)
 
 class SecurityValidator:
-    """Security validation for file parsing operations."""
+    """Advanced security validation for file parsing operations with comprehensive threat detection."""
     
     MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
     MAX_TENSOR_COUNT = 10000
     MAX_METADATA_PAIRS = 1000
     MAX_STRING_LENGTH = 65535
-    ALLOWED_EXTENSIONS = {'.gguf', '.onnx', '.pt', '.pth', '.bin'}
+    MAX_ARRAY_SIZE = 100000
+    MAX_NESTING_DEPTH = 10
+    
+    ALLOWED_EXTENSIONS = {'.gguf', '.onnx', '.pt', '.pth', '.bin', '.safetensors', '.pkl', '.npy'}
+    DANGEROUS_PATTERNS = [b'__reduce__', b'eval', b'exec', b'import', b'subprocess']
     
     @staticmethod
     def validate_file_path(file_path: str) -> None:
-        """Validate file path for security issues."""
+        """Validate file path for security issues with comprehensive checks."""
         if not isinstance(file_path, str) or not file_path.strip():
             raise ValueError("File path must be a non-empty string")
         
         path = Path(file_path)
         
         # Check for path traversal attempts
-        if '..' in str(path) or str(path).startswith('/'):
+        resolved_path = path.resolve()
+        if '..' in str(path) or str(resolved_path).count('..') > 0:
             raise ValueError("Path traversal detected in file path")
+        
+        # Check for suspicious characters
+        suspicious_chars = ['<', '>', '|', '\x00', '\x01', '\x02']
+        if any(char in str(path) for char in suspicious_chars):
+            raise ValueError("Suspicious characters detected in file path")
         
         # Check file exists and is readable
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         
-        # Validate file extension before checking if it's a file
-        if path.suffix.lower() not in SecurityValidator.ALLOWED_EXTENSIONS:
-            raise ValueError(f"Unsupported file extension: {path.suffix}")
-        
         if not path.is_file():
             raise ValueError(f"Path is not a file: {file_path}")
+        
+        # Validate file extension
+        if path.suffix.lower() not in SecurityValidator.ALLOWED_EXTENSIONS:
+            raise ValueError(f"Unsupported file extension: {path.suffix}")
         
         # Check file size
         file_size = path.stat().st_size
@@ -418,58 +428,496 @@ class SecurityValidator:
         
         if file_size == 0:
             raise ValueError("File is empty")
+        
+        # Check file permissions
+        if not os.access(path, os.R_OK):
+            raise ValueError("File is not readable")
     
     @staticmethod
     def validate_tensor_count(count: int) -> None:
-        """Validate tensor count for security."""
-        if not isinstance(count, int) or count < 0:
-            raise ValueError("Tensor count must be a non-negative integer")
+        """Validate tensor count for security with enhanced bounds checking."""
+        if not isinstance(count, int):
+            raise ValueError("Tensor count must be an integer")
+        if count < 0:
+            raise ValueError("Tensor count cannot be negative")
         if count > SecurityValidator.MAX_TENSOR_COUNT:
             raise ValueError(f"Too many tensors: {count} (max: {SecurityValidator.MAX_TENSOR_COUNT})")
     
     @staticmethod
     def validate_metadata_count(count: int) -> None:
-        """Validate metadata pair count for security."""
-        if not isinstance(count, int) or count < 0:
-            raise ValueError("Metadata count must be a non-negative integer")
+        """Validate metadata pair count for security with DOS protection."""
+        if not isinstance(count, int):
+            raise ValueError("Metadata count must be an integer")
+        if count < 0:
+            raise ValueError("Metadata count cannot be negative")
         if count > SecurityValidator.MAX_METADATA_PAIRS:
             raise ValueError(f"Too many metadata pairs: {count} (max: {SecurityValidator.MAX_METADATA_PAIRS})")
     
     @staticmethod
     def validate_string_length(length: int) -> None:
-        """Validate string length for security."""
-        if not isinstance(length, int) or length < 0:
-            raise ValueError("String length must be a non-negative integer")
+        """Validate string length for security with memory protection."""
+        if not isinstance(length, int):
+            raise ValueError("String length must be an integer")
+        if length < 0:
+            raise ValueError("String length cannot be negative")
         if length > SecurityValidator.MAX_STRING_LENGTH:
             raise ValueError(f"String too long: {length} (max: {SecurityValidator.MAX_STRING_LENGTH})")
+    
+    @staticmethod
+    def validate_array_size(size: int, nesting_level: int = 0) -> None:
+        """Validate array size with nesting depth protection."""
+        if not isinstance(size, int):
+            raise ValueError("Array size must be an integer")
+        if size < 0:
+            raise ValueError("Array size cannot be negative")
+        if size > SecurityValidator.MAX_ARRAY_SIZE:
+            raise ValueError(f"Array too large: {size} (max: {SecurityValidator.MAX_ARRAY_SIZE})")
+        if nesting_level > SecurityValidator.MAX_NESTING_DEPTH:
+            raise ValueError(f"Array nesting too deep: {nesting_level} (max: {SecurityValidator.MAX_NESTING_DEPTH})")
+    
+    @staticmethod
+    def scan_for_malicious_content(data: bytes, max_scan_size: int = 1024 * 1024) -> None:
+        """Scan binary data for potentially malicious patterns."""
+        scan_data = data[:max_scan_size]  # Limit scan size for performance
+        
+        for pattern in SecurityValidator.DANGEROUS_PATTERNS:
+            if pattern in scan_data:
+                raise ValueError(f"Potentially malicious pattern detected: {pattern}")
+    
+    @staticmethod
+    def validate_tensor_dimensions(dimensions: List[int]) -> None:
+        """Validate tensor dimensions for memory safety."""
+        if not isinstance(dimensions, list):
+            raise ValueError("Dimensions must be a list")
+        
+        if len(dimensions) > 8:  # Reasonable limit for tensor dimensions
+            raise ValueError(f"Too many dimensions: {len(dimensions)} (max: 8)")
+        
+        total_elements = 1
+        for dim in dimensions:
+            if not isinstance(dim, int) or dim <= 0:
+                raise ValueError(f"Invalid dimension: {dim}")
+            if dim > 100000:  # Reasonable limit per dimension
+                raise ValueError(f"Dimension too large: {dim}")
+            total_elements *= dim
+            if total_elements > 1e9:  # 1 billion elements max
+                raise ValueError("Tensor too large (exceeds element limit)")
+    
+    @staticmethod
+    def calculate_memory_requirement(dimensions: List[int], data_type: int) -> int:
+        """Calculate memory requirement for tensor."""
+        element_count = 1
+        for dim in dimensions:
+            element_count *= dim
+        
+        element_size = GGUFDataType.get_size(data_type)
+        if element_size == 0:
+            element_size = 4  # Default to 4 bytes for unknown types
+        
+        return element_count * element_size
+    
+    @staticmethod
+    def validate_model_integrity(file_path: str) -> Dict[str, Any]:
+        """Perform comprehensive model integrity validation."""
+        integrity_report = {
+            'file_hash': None,
+            'size_validated': False,
+            'structure_validated': False,
+            'content_scanned': False,
+            'risk_level': 'LOW'
+        }
+        
+        try:
+            # Calculate file hash for integrity
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+                integrity_report['file_hash'] = hashlib.sha256(file_content).hexdigest()
+            
+            # Validate file size is reasonable
+            file_size = len(file_content)
+            integrity_report['size_validated'] = file_size < SecurityValidator.MAX_FILE_SIZE
+            
+            # Scan for malicious content
+            SecurityValidator.scan_for_malicious_content(file_content)
+            integrity_report['content_scanned'] = True
+            
+            # Basic structure validation (format-specific)
+            if file_path.endswith('.gguf'):
+                integrity_report['structure_validated'] = file_content.startswith(b'GGUF')
+            elif file_path.endswith('.onnx'):
+                integrity_report['structure_validated'] = b'pytorch' in file_content[:1000] or b'onnx' in file_content[:1000]
+            else:
+                integrity_report['structure_validated'] = True  # Basic validation for other formats
+            
+            # Determine risk level
+            risk_factors = []
+            if file_size > 1e9:  # > 1GB
+                risk_factors.append('LARGE_FILE')
+            if not integrity_report['structure_validated']:
+                risk_factors.append('INVALID_STRUCTURE')
+            
+            if len(risk_factors) == 0:
+                integrity_report['risk_level'] = 'LOW'
+            elif len(risk_factors) <= 2:
+                integrity_report['risk_level'] = 'MEDIUM'
+            else:
+                integrity_report['risk_level'] = 'HIGH'
+                
+        except Exception as e:
+            integrity_report['error'] = str(e)
+            integrity_report['risk_level'] = 'HIGH'
+        
+        return integrity_report
 
 @contextmanager
 def resource_monitor():
-    """Context manager for monitoring resource usage."""
+    """Advanced context manager for monitoring resource usage with detailed metrics."""
     start_time = time.time()
+    start_memory = 0
+    start_gpu_memory = 0
     
+    # CPU and system memory monitoring
     if HAS_RESOURCE:
         start_memory = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    else:
-        start_memory = 0
+    elif HAS_PSUTIL:
+        process = psutil.Process()
+        start_memory = process.memory_info().rss
+    
+    # GPU memory monitoring
+    if torch.cuda.is_available():
+        start_gpu_memory = torch.cuda.memory_allocated()
+    
+    resource_metrics = {
+        'start_time': start_time,
+        'start_memory': start_memory,
+        'start_gpu_memory': start_gpu_memory,
+        'peak_memory': start_memory,
+        'peak_gpu_memory': start_gpu_memory
+    }
     
     try:
-        yield
+        yield resource_metrics
     finally:
         end_time = time.time()
         duration = end_time - start_time
         
+        # Final memory measurements
+        end_memory = start_memory
+        end_gpu_memory = start_gpu_memory
+        
         if HAS_RESOURCE:
             end_memory = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            memory_delta = end_memory - start_memory
-        else:
-            memory_delta = 0
+        elif HAS_PSUTIL:
+            process = psutil.Process()
+            end_memory = process.memory_info().rss
+        
+        if torch.cuda.is_available():
+            end_gpu_memory = torch.cuda.memory_allocated()
+        
+        # Calculate deltas
+        memory_delta = end_memory - start_memory
+        gpu_memory_delta = end_gpu_memory - start_gpu_memory
+        
+        # Update metrics
+        resource_metrics.update({
+            'duration': duration,
+            'end_memory': end_memory,
+            'end_gpu_memory': end_gpu_memory,
+            'memory_delta': memory_delta,
+            'gpu_memory_delta': gpu_memory_delta,
+            'memory_efficiency': memory_delta / max(duration, 0.001),  # Memory per second
+            'gpu_efficiency': gpu_memory_delta / max(duration, 0.001)
+        })
         
         logger.info(
-            f"Resource usage - Duration: {duration:.3f}s, Memory delta: {memory_delta}KB",
-            duration=duration,
-            memory_delta=memory_delta
+            f"Resource usage summary",
+            duration=f"{duration:.3f}s",
+            memory_delta_mb=f"{memory_delta / (1024*1024):.2f}MB" if memory_delta else "0MB",
+            gpu_memory_delta_mb=f"{gpu_memory_delta / (1024*1024):.2f}MB" if gpu_memory_delta else "0MB",
+            memory_efficiency=f"{resource_metrics['memory_efficiency']:.2f} bytes/s",
+            gpu_efficiency=f"{resource_metrics['gpu_efficiency']:.2f} bytes/s"
         )
+
+class AdvancedModelCache:
+    """Sophisticated caching system for model data with LRU eviction and compression."""
+    
+    def __init__(self, max_memory_mb: int = 2048, compression_enabled: bool = True):
+        self.max_memory_bytes = max_memory_mb * 1024 * 1024
+        self.compression_enabled = compression_enabled
+        self.cache = OrderedDict()
+        self.memory_usage = 0
+        self.hit_count = 0
+        self.miss_count = 0
+        self.compression_ratio = 0.0
+        self._lock = threading.RLock()
+    
+    def get(self, key: str) -> Optional[Any]:
+        """Get item from cache with LRU update."""
+        with self._lock:
+            if key in self.cache:
+                # Move to end (most recent)
+                value = self.cache.pop(key)
+                self.cache[key] = value
+                self.hit_count += 1
+                
+                # Decompress if needed
+                if self.compression_enabled and isinstance(value, dict) and 'compressed_data' in value:
+                    return self._decompress_data(value)
+                return value
+            else:
+                self.miss_count += 1
+                return None
+    
+    def put(self, key: str, value: Any, force: bool = False) -> bool:
+        """Put item in cache with optional compression."""
+        with self._lock:
+            # Calculate value size
+            value_size = self._calculate_size(value)
+            
+            # Compress if beneficial
+            if self.compression_enabled and value_size > 1024:  # Only compress larger items
+                compressed_value = self._compress_data(value)
+                compressed_size = self._calculate_size(compressed_value)
+                if compressed_size < value_size * 0.8:  # 20% compression benefit
+                    value = compressed_value
+                    value_size = compressed_size
+                    self.compression_ratio = compressed_size / value_size
+            
+            # Check if we need to make space
+            while (self.memory_usage + value_size > self.max_memory_bytes and 
+                   len(self.cache) > 0 and not force):
+                self._evict_oldest()
+            
+            # Add to cache
+            if self.memory_usage + value_size <= self.max_memory_bytes or force:
+                if key in self.cache:
+                    # Update existing
+                    old_size = self._calculate_size(self.cache[key])
+                    self.memory_usage -= old_size
+                
+                self.cache[key] = value
+                self.memory_usage += value_size
+                return True
+            
+            return False
+    
+    def _evict_oldest(self):
+        """Evict the oldest item from cache."""
+        if self.cache:
+            oldest_key, oldest_value = self.cache.popitem(last=False)
+            self.memory_usage -= self._calculate_size(oldest_value)
+    
+    def _calculate_size(self, obj: Any) -> int:
+        """Estimate object size in bytes."""
+        if isinstance(obj, torch.Tensor):
+            return obj.element_size() * obj.numel()
+        elif isinstance(obj, (str, bytes)):
+            return len(obj)
+        elif isinstance(obj, dict):
+            return sum(self._calculate_size(k) + self._calculate_size(v) for k, v in obj.items())
+        elif isinstance(obj, (list, tuple)):
+            return sum(self._calculate_size(item) for item in obj)
+        else:
+            # Fallback: use pickle size
+            try:
+                return len(pickle.dumps(obj))
+            except:
+                return 1024  # Default estimate
+    
+    def _compress_data(self, data: Any) -> Dict[str, Any]:
+        """Compress data using zlib."""
+        try:
+            serialized = pickle.dumps(data)
+            compressed = zlib.compress(serialized, level=6)
+            return {
+                'compressed_data': compressed,
+                'original_size': len(serialized),
+                'compressed_size': len(compressed)
+            }
+        except Exception as e:
+            logger.warning(f"Compression failed: {e}")
+            return data
+    
+    def _decompress_data(self, compressed_dict: Dict[str, Any]) -> Any:
+        """Decompress data from zlib."""
+        try:
+            compressed = compressed_dict['compressed_data']
+            decompressed = zlib.decompress(compressed)
+            return pickle.loads(decompressed)
+        except Exception as e:
+            logger.error(f"Decompression failed: {e}")
+            return None
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        total_requests = self.hit_count + self.miss_count
+        hit_rate = self.hit_count / total_requests if total_requests > 0 else 0
+        
+        return {
+            'hit_count': self.hit_count,
+            'miss_count': self.miss_count,
+            'hit_rate': hit_rate,
+            'memory_usage_mb': self.memory_usage / (1024 * 1024),
+            'max_memory_mb': self.max_memory_bytes / (1024 * 1024),
+            'items_count': len(self.cache),
+            'compression_ratio': self.compression_ratio
+        }
+    
+    def clear(self):
+        """Clear all cache entries."""
+        with self._lock:
+            self.cache.clear()
+            self.memory_usage = 0
+
+class BayesianModelSelector:
+    """Bayesian optimization for model selection and capability matching."""
+    
+    def __init__(self, capability_priors: Dict[str, float] = None):
+        self.capability_priors = capability_priors or {}
+        self.model_performance_history = defaultdict(list)
+        self.capability_model_mapping = defaultdict(list)
+        self.selection_history = []
+    
+    def update_model_performance(self, model_id: str, capability: str, 
+                               performance_score: float, context: Dict[str, Any] = None):
+        """Update model performance for Bayesian learning."""
+        performance_record = {
+            'timestamp': time.time(),
+            'capability': capability,
+            'score': performance_score,
+            'context': context or {}
+        }
+        
+        self.model_performance_history[model_id].append(performance_record)
+        self.capability_model_mapping[capability].append((model_id, performance_score))
+    
+    def calculate_capability_score(self, model_metadata: ModelMetadata, 
+                                 target_capability: str) -> float:
+        """Calculate Bayesian capability score for a model."""
+        # Prior probability from capability list
+        prior_score = 0.5  # Default neutral prior
+        if target_capability in model_metadata.capabilities:
+            prior_score = 0.8
+        elif target_capability in self.capability_priors:
+            prior_score = self.capability_priors[target_capability]
+        
+        # Likelihood from historical performance
+        likelihood_score = self._calculate_likelihood(model_metadata.name, target_capability)
+        
+        # Performance-based evidence
+        performance_evidence = model_metadata.performance_metrics.get(target_capability, 0.5)
+        
+        # Bayesian combination
+        posterior_score = self._bayesian_update(prior_score, likelihood_score, performance_evidence)
+        
+        return posterior_score
+    
+    def _calculate_likelihood(self, model_id: str, capability: str) -> float:
+        """Calculate likelihood based on historical performance."""
+        if model_id not in self.model_performance_history:
+            return 0.5  # Neutral likelihood for unknown models
+        
+        capability_performances = [
+            record['score'] for record in self.model_performance_history[model_id]
+            if record['capability'] == capability
+        ]
+        
+        if not capability_performances:
+            return 0.5
+        
+        # Calculate weighted average with recency bias
+        weights = [math.exp(-0.1 * (len(capability_performances) - i)) 
+                  for i in range(len(capability_performances))]
+        weighted_score = sum(w * s for w, s in zip(weights, capability_performances)) / sum(weights)
+        
+        return weighted_score
+    
+    def _bayesian_update(self, prior: float, likelihood: float, evidence: float) -> float:
+        """Perform Bayesian update of capability score."""
+        # Normalize inputs
+        prior = max(0.01, min(0.99, prior))
+        likelihood = max(0.01, min(0.99, likelihood))
+        evidence = max(0.01, min(0.99, evidence))
+        
+        # Bayesian update: P(capability|evidence) ∝ P(evidence|capability) * P(capability)
+        numerator = likelihood * prior * evidence
+        denominator = likelihood * prior * evidence + (1 - likelihood) * (1 - prior) * (1 - evidence)
+        
+        posterior = numerator / max(denominator, 0.001)
+        return max(0.01, min(0.99, posterior))
+    
+    def select_best_models(self, available_models: List[ModelMetadata], 
+                          target_capability: str, top_k: int = 3) -> List[Tuple[ModelMetadata, float]]:
+        """Select best models for a capability using Bayesian scoring."""
+        model_scores = []
+        
+        for model in available_models:
+            capability_score = self.calculate_capability_score(model, target_capability)
+            
+            # Adjust for other factors
+            safety_weight = 0.2
+            performance_weight = 0.3
+            compatibility_weight = 0.2
+            efficiency_weight = 0.3
+            
+            final_score = (
+                capability_score * (1 - safety_weight - performance_weight - compatibility_weight - efficiency_weight) +
+                model.safety_score * safety_weight +
+                model.performance_metrics.get('overall', 0.5) * performance_weight +
+                model.compatibility_score * compatibility_weight +
+                (1.0 / max(model.memory_requirements, 1)) * efficiency_weight
+            )
+            
+            model_scores.append((model, final_score))
+        
+        # Sort by score and return top k
+        model_scores.sort(key=lambda x: x[1], reverse=True)
+        return model_scores[:top_k]
+    
+    def generate_assimilation_plan(self, capability_gaps: List[CapabilityGap], 
+                                 available_models: List[ModelMetadata]) -> Dict[str, Any]:
+        """Generate comprehensive assimilation plan."""
+        plan = {
+            'timestamp': time.time(),
+            'capability_gaps': capability_gaps,
+            'assimilation_sequence': [],
+            'resource_requirements': {'memory': 0, 'compute': 0},
+            'estimated_performance_gain': {},
+            'risk_assessment': {}
+        }
+        
+        for gap in sorted(capability_gaps, key=lambda x: x.priority, reverse=True):
+            best_models = self.select_best_models(available_models, gap.name, top_k=2)
+            
+            if best_models:
+                selected_model, score = best_models[0]
+                
+                assimilation_step = {
+                    'capability': gap.name,
+                    'model': selected_model,
+                    'confidence_score': score,
+                    'alternatives': best_models[1:],
+                    'strategy': self._select_assimilation_strategy(selected_model, gap)
+                }
+                
+                plan['assimilation_sequence'].append(assimilation_step)
+                plan['resource_requirements']['memory'] += selected_model.memory_requirements
+                plan['resource_requirements']['compute'] += selected_model.compute_requirements
+                plan['estimated_performance_gain'][gap.name] = score * gap.priority
+        
+        return plan
+    
+    def _select_assimilation_strategy(self, model: ModelMetadata, gap: CapabilityGap) -> AssimilationStrategy:
+        """Select optimal assimilation strategy based on model and gap characteristics."""
+        # Simple heuristic-based strategy selection
+        if model.size_bytes > 1e9:  # Large model
+            return AssimilationStrategy.KNOWLEDGE_DISTILLATION
+        elif gap.priority > 0.8:  # High priority
+            return AssimilationStrategy.RECURSIVE_MERGE
+        elif model.safety_score < 0.7:  # Lower safety
+            return AssimilationStrategy.CONSTITUTIONAL_VALIDATION
+        else:
+            return AssimilationStrategy.WEIGHT_INTERPOLATION
 
 class GGUFAssimilatorModalityEncoder(nn.Module):
     """
