@@ -6,6 +6,16 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional, Any, Union, Set
 from dataclasses import dataclass, field
 from enum import Enum
+# ...existing code...
+import logging
+import torch
+import torch.nn as nn
+
+# Plugin system (defensive import)
+try:
+    from modality_plugin_system import EnhancedModalityEncoderManager
+except Exception:
+    EnhancedModalityEncoderManager = None  # Optional feature
 
 # --- Custom Imports for New Output Heads ---
 from extra_output_heads.tool_output_head import UniversalToolControlOutputHead, EclogueConfig
@@ -703,10 +713,9 @@ class SacredBreathEngine:
         fib_ratio = FIBONACCI_SEQUENCE[fib_index] / FIBONACCI_SEQUENCE[-1]
         return (t * self.config.breath_cycle_duration * fib_ratio) % self.config.breath_cycle_duration
     
-            phase = SacredBreathPhase.EXHALATION
-        else:
-            phase = SacredBreathPhase.PAUSE_EXHALE
-            
+    phase = SacredBreathPhase.EXHALATION
+    else: phase = SacredBreathPhase.PAUSE_EXHALE
+
         # Cache result with size limit
         if len(self._phase_cache) < 10000:
             self._phase_cache[cache_key] = phase
@@ -1666,7 +1675,113 @@ class GPT_Ø(nn.Module):
     BayesianConfigurationOrchestrator, and its weights are computed in real-time
     by the RecursiveWeightCore.
     """
-    def __init__(self, config_path: str = "agent_config.yaml"):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        # ...existing initialization...
+
+        # Initialize optional modality plugin manager
+        self.plugin_manager = None
+        if EnhancedModalityEncoderManager is not None:
+            try:
+                # Build a minimal backbone config if not available
+                backbone_cfg = None
+                try:
+                    backbone_cfg = kwargs.get('backbone_config', None)
+                except Exception:
+                    backbone_cfg = None
+
+                if backbone_cfg is None:
+                    # Fallback minimal config with hidden_size inferred from model if possible
+                    class _BackboneCfg:
+                        hidden_size = getattr(self, 'd_model', 4096)
+                    backbone_cfg = _BackboneCfg()
+
+                self.plugin_manager = EnhancedModalityEncoderManager(backbone_cfg)
+
+                # Extend discovery paths to include common project locations
+                try:
+                    self.plugin_manager.plugin_engine.plugin_directories.extend([
+                        'modality_plugins',            # default
+                        'extra_output_heads',          # allow encoder plugins co-located with heads
+                    ])
+                    # Reload to pick up new directories
+                    self.plugin_manager.reload_plugins()
+                except Exception as e:
+                    logger.debug(f"Plugin discovery path extension failed: {e}")
+
+                logger.info("Modality plugin manager initialized")
+            except Exception as e:
+                logger.warning(f"Modality plugin manager unavailable: {e}")
+
+    # Helper: attempt plugin-based encoding as a fallback
+    def encode_modality_dynamic(
+        self,
+        inputs: Any,
+        modality: Union['ModalityType', str],
+        attention_mask: Optional[torch.Tensor] = None,
+        memory_context: Optional[torch.Tensor] = None,
+        use_cache: bool = True,
+    ) -> Optional[Dict[str, torch.Tensor]]:
+        """Try encoding via plugin system when built-in path is missing or extended modalities are used."""
+        if self.plugin_manager is None:
+            return None
+        try:
+            return self.plugin_manager.encode_modality(
+                inputs,
+                modality,
+                attention_mask=attention_mask,
+                memory_context=memory_context,
+                use_cache=use_cache,
+            )
+        except Exception as e:
+            logger.debug(f"Plugin encoding failed for modality '{modality}': {e}")
+            return None
+
+    def list_supported_modalities(self) -> List[str]:
+        """List all modalities supported by the model, including plugins if available."""
+        supported: List[str] = []
+        # Add built-in enum values if present
+        try:
+            if 'ModalityType' in globals() and isinstance(ModalityType, type):
+                supported.extend([m.value for m in ModalityType])
+        except Exception:
+            pass
+        # Add plugin modalities
+        if self.plugin_manager is not None:
+            try:
+                supported.extend(self.plugin_manager.get_all_supported_modalities())
+            except Exception:
+                pass
+        # Deduplicate while preserving order
+        seen = set()
+        unique_supported = []
+        for m in supported:
+            if m not in seen:
+                unique_supported.append(m)
+                seen.add(m)
+        return unique_supported
+
+    # Example usage in generate/forward paths (non-invasive hook):
+    # Wherever inputs are routed by modality, attempt plugin path when no built-in encoder matches.
+    def _encode_with_routing_or_plugins(
+        self,
+        inputs: Any,
+        modality: Union['ModalityType', str],
+        attention_mask: Optional[torch.Tensor] = None,
+        memory_context: Optional[torch.Tensor] = None,
+    ) -> Optional[Dict[str, torch.Tensor]]:
+        """Lightweight router that tries built-in routing first; falls back to plugins."""
+        # ...existing built-in routing to encoders goes here...
+        # If not handled, try plugins
+        plugin_result = self.encode_modality_dynamic(
+            inputs,
+            modality,
+            attention_mask=attention_mask,
+            memory_context=memory_context,
+            use_cache=True,
+        )
+        return plugin_result
         super().__init__()
 
         # --- Core Configuration Orchestrator ---
