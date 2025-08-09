@@ -11,12 +11,6 @@ import logging
 import torch
 import torch.nn as nn
 
-# Plugin system (defensive import)
-try:
-    from modality_plugin_system import EnhancedModalityEncoderManager
-except Exception:
-    EnhancedModalityEncoderManager = None  # Optional feature
-
 # --- Custom Imports for New Output Heads ---
 from extra_output_heads.tool_output_head import UniversalToolControlOutputHead, EclogueConfig
 from extra_output_heads.eyes_outputs import ISRMasterCoordinator
