@@ -214,11 +214,11 @@ class SomnusGPTZeroLauncher:
         banner_text = """
     ╔═══════════════════════════════════════════════════════════════╗
     ║                                                               ║
-    ║    GPT-Ø: Revolutionary Self-Modifying Multimodal AI         ║
-    ║    🤖 Somnus Sovereign Kernel Integration                      ║
+    ║    GPT-Ø: Revolutionary Self-Modifying Multimodal AI          ║
+    ║     Somnus Sovereign Kernel Integration                       ║
     ║                                                               ║
-    ║    🧠 33B+ Parameters • 🔄 Self-Modifying • 🌐 13+ Modalities ║
-    ║    💾 8GB RAM • 🔒 Constitutional AI • 🚀 Model Assimilation   ║
+    ║     33B+ Parameters •  Self-Modifying •  16+ Modalities       ║
+    ║     8GB RAM •  Constitutional AI •  Model Assimilation        ║
     ║                                                               ║
     ╚═══════════════════════════════════════════════════════════════╝
         """
