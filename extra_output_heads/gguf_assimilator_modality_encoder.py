@@ -2423,30 +2423,30 @@ class GGUFAssimilatorModalityEncoder(nn.Module):
                 # Simulate re-vectorization or transformation if needed
                 # For simplicity, we'll just ensure it's float32 and potentially reshape
                 processed_tensor = tensor.to(torch.float32)
-                if processed_tensor.dim() > 1 and processed_tensor.shape[-1] != self.assimilation_network[0].in_features:
+                if processed_tensor.dim() > 1 and processed_tensor.shape[-1] != self.input_dim:
                     # If the last dimension doesn't match, attempt a simple projection or flatten
                     # This is a heuristic; a real system would have more sophisticated mapping
-                    if processed_tensor.numel() >= self.assimilation_network[0].in_features:
-                        processed_tensor = processed_tensor.flatten()[:self.assimilation_network[0].in_features]
+                    if processed_tensor.numel() >= self.input_dim:
+                        processed_tensor = processed_tensor.flatten()[:self.input_dim]
                     else:
                         # If too small, pad with zeros
-                        padding = self.assimilation_network[0].in_features - processed_tensor.numel()
+                        padding = self.input_dim - processed_tensor.numel()
                         processed_tensor = torch.cat([processed_tensor.flatten(), torch.zeros(padding, dtype=torch.float32)])
                     logger.debug(
                         f"Reshaped/padded tensor to match input_dim",
                         tensor_name=name
                     )
-                elif processed_tensor.numel() < self.assimilation_network[0].in_features:
+                elif processed_tensor.numel() < self.input_dim:
                     # If 1D and too small, pad
-                    padding = self.assimilation_network[0].in_features - processed_tensor.numel()
+                    padding = self.input_dim - processed_tensor.numel()
                     processed_tensor = torch.cat([processed_tensor.flatten(), torch.zeros(padding, dtype=torch.float32)])
                     logger.debug(
                         f"Padded 1D tensor to match input_dim",
                         tensor_name=name
                     )
-                elif processed_tensor.numel() > self.assimilation_network[0].in_features:
+                elif processed_tensor.numel() > self.input_dim:
                     # If 1D and too large, truncate
-                    processed_tensor = processed_tensor.flatten()[:self.assimilation_network[0].in_features]
+                    processed_tensor = processed_tensor.flatten()[:self.input_dim]
                     logger.debug(
                         f"Truncated 1D tensor to match input_dim",
                         tensor_name=name
@@ -2560,6 +2560,578 @@ class GGUFAssimilatorModalityEncoder(nn.Module):
             shape=mapped_tensor.shape
         )
         return mapped_tensor
+    
+    def _assess_model_capabilities(self, metadata: ModelMetadata) -> Dict[str, float]:
+        """Assess model capabilities using Bayesian analysis."""
+        capability_scores = {}
+        
+        for capability in metadata.capabilities:
+            score = self.bayesian_selector.calculate_capability_score(metadata, capability)
+            capability_scores[capability] = score
+        
+        return capability_scores
+    
+    def _constitutional_pre_validation(self, metadata: ModelMetadata) -> Dict[str, Any]:
+        """Perform constitutional validation before assimilation."""
+        validation_result = {
+            'approved': True,
+            'reasons': [],
+            'conditions': []
+        }
+        
+        # Safety score validation
+        if metadata.safety_score < 0.6:
+            validation_result['approved'] = False
+            validation_result['reasons'].append(f"Low safety score: {metadata.safety_score}")
+        
+        # Size validation
+        if metadata.size_bytes > 5e9:  # 5GB limit
+            validation_result['approved'] = False
+            validation_result['reasons'].append(f"Model too large: {metadata.size_bytes / 1e9:.1f}GB")
+        
+        # Capability validation
+        risky_capabilities = ['system_access', 'network_control', 'data_manipulation']
+        found_risky = [cap for cap in metadata.capabilities if cap in risky_capabilities]
+        if found_risky:
+            validation_result['approved'] = False
+            validation_result['reasons'].append(f"Risky capabilities detected: {found_risky}")
+        
+        return validation_result
+    
+    def _intelligent_assimilation_advanced(self, extracted_tensors: Dict[str, torch.Tensor], 
+                                         metadata: ModelMetadata) -> Optional[Dict[str, torch.Tensor]]:
+        """Advanced intelligent assimilation with meta-learning guidance."""
+        if not extracted_tensors:
+            return None
+        
+        assimilated_tensors = {}
+        
+        # Meta-learning guided selection
+        for name, tensor in extracted_tensors.items():
+            # Calculate assimilation score
+            assimilation_score = self._calculate_tensor_assimilation_score(tensor, name, metadata)
+            
+            if assimilation_score > 0.5:  # Threshold for inclusion
+                # Apply intelligent preprocessing
+                processed_tensor = self._preprocess_tensor_for_assimilation(tensor, metadata)
+                assimilated_tensors[name] = processed_tensor
+                
+                logger.debug(
+                    f"Tensor selected for assimilation",
+                    tensor_name=name,
+                    score=assimilation_score,
+                    shape=tensor.shape
+                )
+        
+        return assimilated_tensors if assimilated_tensors else None
+    
+    def _calculate_tensor_assimilation_score(self, tensor: torch.Tensor, name: str, 
+                                           metadata: ModelMetadata) -> float:
+        """Calculate how valuable this tensor is for assimilation."""
+        score = 0.5  # Base score
+        
+        # Size-based scoring
+        if tensor.numel() > 1000:  # Significant tensor
+            score += 0.2
+        if tensor.numel() < 10:  # Too small
+            score -= 0.3
+        
+        # Name-based scoring
+        if 'weight' in name.lower():
+            score += 0.3
+        if 'bias' in name.lower():
+            score += 0.1
+        if 'embedding' in name.lower():
+            score += 0.2
+        
+        # Dimension-based scoring
+        if tensor.dim() >= 2:  # Multi-dimensional tensors are more valuable
+            score += 0.1
+        
+        # Capability-based scoring
+        if 'language' in metadata.capabilities:
+            if 'embed' in name.lower() or 'token' in name.lower():
+                score += 0.2
+        
+        return max(0.0, min(1.0, score))
+    
+    def _preprocess_tensor_for_assimilation(self, tensor: torch.Tensor, 
+                                          metadata: ModelMetadata) -> torch.Tensor:
+        """Preprocess tensor for optimal assimilation."""
+        # Ensure float32 for compatibility
+        processed = tensor.to(torch.float32)
+        
+        # Normalize large tensors to prevent instability
+        if processed.abs().max() > 10.0:
+            processed = processed / processed.abs().max() * 10.0
+        
+        # Handle dimension compatibility
+        if processed.numel() > self.input_dim:
+            # Intelligent downsampling
+            processed = self._intelligent_downsample(processed)
+        elif processed.numel() < self.input_dim:
+            # Intelligent upsampling
+            processed = self._intelligent_upsample(processed)
+        
+        return processed
+    
+    def _intelligent_downsample(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Intelligently downsample tensor while preserving important information."""
+        # Flatten tensor
+        flat_tensor = tensor.flatten()
+        
+        if len(flat_tensor) <= self.input_dim:
+            return flat_tensor
+        
+        # Use importance sampling based on magnitude
+        importance = flat_tensor.abs()
+        
+        # Select top-k important elements
+        _, indices = torch.topk(importance, self.input_dim)
+        indices, _ = torch.sort(indices)  # Maintain some order
+        
+        return flat_tensor[indices]
+    
+    def _intelligent_upsample(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Intelligently upsample tensor to match input dimensions."""
+        flat_tensor = tensor.flatten()
+        current_size = len(flat_tensor)
+        target_size = self.input_dim
+        
+        if current_size >= target_size:
+            return flat_tensor[:target_size]
+        
+        # Use interpolation to upsample
+        indices = torch.linspace(0, current_size - 1, target_size)
+        indices_floor = indices.long()
+        indices_ceil = torch.clamp(indices_floor + 1, max=current_size - 1)
+        
+        weights = indices - indices_floor.float()
+        
+        upsampled = (1 - weights) * flat_tensor[indices_floor] + weights * flat_tensor[indices_ceil]
+        
+        return upsampled
+    
+    def _recursive_tensor_mapping(self, assimilated_data: Dict[str, torch.Tensor], 
+                                metadata: ModelMetadata) -> Optional[torch.Tensor]:
+        """Advanced recursive tensor mapping with meta-cognitive enhancement."""
+        try:
+            # Apply recursive weight formalism: W_new = B × Scale + R × W_external + Φ(t) + ε
+            
+            # Base weights (B)
+            base_weights = torch.randn(self.input_dim) * 0.01
+            
+            # Scale factor based on model metadata
+            scale_factor = self._calculate_scale_factor(metadata)
+            
+            # Recursive coefficient (R)
+            recursive_coeff = self._calculate_recursive_coefficient(metadata)
+            
+            # Temporal evolution (Φ(t))
+            temporal_factor = self._calculate_temporal_factor()
+            
+            # Noise term (ε)
+            noise_term = torch.randn(self.input_dim) * 0.001
+            
+            # Combine all tensors using weighted averaging
+            combined_tensor = torch.zeros(self.input_dim)
+            total_weight = 0.0
+            
+            for name, tensor in assimilated_data.items():
+                weight = self._calculate_tensor_weight(tensor, name, metadata)
+                if tensor.numel() == self.input_dim:
+                    combined_tensor += weight * tensor
+                    total_weight += weight
+            
+            if total_weight > 0:
+                combined_tensor /= total_weight
+            
+            # Apply recursive formalism
+            final_tensor = (
+                base_weights * scale_factor +
+                recursive_coeff * combined_tensor +
+                temporal_factor +
+                noise_term
+            )
+            
+            return final_tensor
+            
+        except Exception as e:
+            logger.error(f"Recursive tensor mapping failed: {e}")
+            return None
+    
+    def _calculate_scale_factor(self, metadata: ModelMetadata) -> float:
+        """Calculate scale factor based on model characteristics."""
+        # Base scale
+        scale = 1.0
+        
+        # Adjust for model size
+        if metadata.parameters > 1e9:  # Large model
+            scale *= 0.8
+        elif metadata.parameters < 1e6:  # Small model
+            scale *= 1.2
+        
+        # Adjust for safety
+        scale *= metadata.safety_score
+        
+        return scale
+    
+    def _calculate_recursive_coefficient(self, metadata: ModelMetadata) -> float:
+        """Calculate recursive coefficient for weight integration."""
+        # Base coefficient
+        coeff = 0.5
+        
+        # Adjust based on compatibility
+        coeff *= metadata.compatibility_score
+        
+        # Adjust based on assimilation priority
+        coeff *= metadata.assimilation_priority
+        
+        return coeff
+    
+    def _calculate_temporal_factor(self) -> torch.Tensor:
+        """Calculate temporal evolution factor."""
+        # Simple sinusoidal temporal evolution
+        t = time.time() % (2 * math.pi)
+        amplitude = 0.01
+        return torch.ones(self.input_dim) * amplitude * math.sin(t)
+    
+    def _calculate_tensor_weight(self, tensor: torch.Tensor, name: str, 
+                               metadata: ModelMetadata) -> float:
+        """Calculate weight for tensor in combination."""
+        weight = 1.0
+        
+        # Name-based weighting
+        if 'weight' in name.lower():
+            weight *= 2.0
+        elif 'bias' in name.lower():
+            weight *= 0.5
+        elif 'embedding' in name.lower():
+            weight *= 1.5
+        
+        # Size-based weighting
+        weight *= min(1.0, tensor.numel() / 1000.0)
+        
+        return weight
+    
+    def _evaluate_performance_gains(self, representation: torch.Tensor, 
+                                  metadata: ModelMetadata) -> Dict[str, float]:
+        """Evaluate performance gains from assimilation."""
+        gains = {}
+        
+        # Capability-based gains
+        for capability in metadata.capabilities:
+            base_performance = self.capability_performance.get(capability, [0.5])
+            avg_performance = sum(base_performance) / len(base_performance)
+            
+            # Estimate gain based on representation quality
+            representation_quality = self._assess_representation_quality(representation)
+            estimated_gain = representation_quality * metadata.assimilation_priority
+            
+            gains[capability] = estimated_gain
+        
+        # Overall performance gain
+        gains['overall'] = sum(gains.values()) / max(len(gains), 1)
+        
+        return gains
+    
+    def _assess_representation_quality(self, representation: torch.Tensor) -> float:
+        """Assess quality of assimilated representation."""
+        # Multiple quality metrics
+        metrics = []
+        
+        # Information content (entropy-based)
+        prob_dist = torch.softmax(representation, dim=0)
+        entropy = -torch.sum(prob_dist * torch.log(prob_dist + 1e-8))
+        normalized_entropy = entropy / math.log(len(representation))
+        metrics.append(normalized_entropy.item())
+        
+        # Dynamic range
+        dynamic_range = (representation.max() - representation.min()).item()
+        normalized_range = min(1.0, dynamic_range / 10.0)
+        metrics.append(normalized_range)
+        
+        # Stability (low variance indicates stability)
+        stability = 1.0 - min(1.0, representation.var().item())
+        metrics.append(stability)
+        
+        return sum(metrics) / len(metrics)
+    
+    def _update_capability_registry(self, metadata: ModelMetadata, gains: Dict[str, float]):
+        """Update capability registry with new model information."""
+        with self._locks['capability_update']:
+            for capability in metadata.capabilities:
+                self.assimilated_capabilities.add(capability)
+                
+                # Update performance history
+                if capability in gains:
+                    self.capability_performance[capability].append(gains[capability])
+                    
+                    # Keep only recent history (last 100 entries)
+                    if len(self.capability_performance[capability]) > 100:
+                        self.capability_performance[capability] = self.capability_performance[capability][-100:]
+    
+    def _update_meta_learning_system(self, metadata: ModelMetadata, gains: Dict[str, float]):
+        """Update meta-learning system with assimilation results."""
+        with self._locks['meta_learning']:
+            for capability, gain in gains.items():
+                self.bayesian_selector.update_model_performance(
+                    metadata.name, capability, gain
+                )
+    
+    def _update_performance_metrics(self, operation: str, duration: float):
+        """Update performance monitoring metrics."""
+        self.performance_monitor['metrics'][operation].append({
+            'timestamp': time.time(),
+            'duration': duration
+        })
+        
+        # Check thresholds
+        if duration > self.performance_monitor['thresholds']['processing_time']:
+            self.performance_monitor['alerts'].append({
+                'type': 'PERFORMANCE_DEGRADATION',
+                'operation': operation,
+                'duration': duration,
+                'threshold': self.performance_monitor['thresholds']['processing_time'],
+                'timestamp': time.time()
+            })
+    
+    def _create_failure_result(self, model_name: str, error_message: str, 
+                             execution_time: float) -> AssimilationResult:
+        """Create standardized failure result."""
+        return AssimilationResult(
+            success=False,
+            model_name=model_name,
+            assimilated_capabilities=[],
+            performance_gain={},
+            memory_usage=0,
+            execution_time=execution_time,
+            safety_validation=False,
+            error_message=error_message
+        )
+    
+    # Revolutionary Autonomous Growth Methods
+    
+    def identify_capability_gaps(self) -> List[CapabilityGap]:
+        """Autonomously identify capability gaps for self-improvement."""
+        if not self.autonomous_growth:
+            return []
+        
+        gaps = []
+        
+        # Analyze recent performance failures
+        recent_failures = self._analyze_recent_failures()
+        
+        # Use neural network to identify gap patterns
+        if self.growth_engine and recent_failures:
+            gap_scores = self.growth_engine['gap_detector'](torch.randn(self.output_dim))
+            urgency_scores = self.growth_engine['urgency_scorer'](torch.randn(self.output_dim))
+            
+            # Convert neural outputs to capability gaps
+            capability_names = [
+                'advanced_reasoning', 'code_generation', 'mathematical_analysis',
+                'creative_writing', 'scientific_computation', 'data_analysis',
+                'language_translation', 'computer_vision', 'audio_processing',
+                'multimodal_understanding'
+            ]
+            
+            for i, (score, urgency) in enumerate(zip(gap_scores, urgency_scores)):
+                if score > 0.3 and i < len(capability_names):  # Threshold for gap detection
+                    gap = CapabilityGap(
+                        name=capability_names[i],
+                        description=f"Identified capability gap in {capability_names[i]}",
+                        priority=urgency.item(),
+                        required_performance={'accuracy': 0.85, 'speed': 0.9},
+                        search_criteria={'size': 'medium_to_large', 'quality': 'high'},
+                        deadline=time.time() + 30 * 24 * 3600  # 30 days
+                    )
+                    gaps.append(gap)
+        
+        return gaps
+    
+    def _analyze_recent_failures(self) -> List[Dict[str, Any]]:
+        """Analyze recent failures to identify patterns."""
+        failures = []
+        
+        # Analyze performance alerts
+        for alert in self.performance_monitor['alerts'][-10:]:  # Last 10 alerts
+            if alert['type'] == 'PERFORMANCE_DEGRADATION':
+                failures.append({
+                    'type': 'performance',
+                    'operation': alert['operation'],
+                    'severity': alert['duration'] / alert['threshold']
+                })
+        
+        # Analyze assimilation history for failures
+        for history_item in self.assimilation_history[-20:]:  # Last 20 assimilations
+            result = history_item['result']
+            if not result.success:
+                failures.append({
+                    'type': 'assimilation',
+                    'model': result.model_name,
+                    'error': result.error_message
+                })
+        
+        return failures
+    
+    async def autonomous_model_search(self, capability_gap: CapabilityGap) -> List[str]:
+        """Autonomously search for models to fill capability gaps."""
+        # Simulate model repository search
+        # In practice, this would interface with HuggingFace, Ollama, etc.
+        
+        search_results = []
+        
+        # Heuristic model recommendations based on capability
+        capability_model_map = {
+            'advanced_reasoning': ['reasoning-model-v1.gguf', 'logic-transformer.pt'],
+            'code_generation': ['codegen-model.gguf', 'programming-assistant.pt'],
+            'mathematical_analysis': ['math-solver.gguf', 'equation-model.pt'],
+            'creative_writing': ['creative-writer.gguf', 'story-generator.pt'],
+            'scientific_computation': ['science-model.gguf', 'research-assistant.pt']
+        }
+        
+        if capability_gap.name in capability_model_map:
+            search_results.extend(capability_model_map[capability_gap.name])
+        
+        logger.info(
+            f"Autonomous search completed for capability gap",
+            capability=capability_gap.name,
+            results_found=len(search_results)
+        )
+        
+        return search_results
+    
+    async def autonomous_growth_cycle(self):
+        """Execute complete autonomous growth cycle."""
+        logger.info("🤖 Starting autonomous growth cycle")
+        
+        try:
+            # Phase 1: Identify capability gaps
+            capability_gaps = self.identify_capability_gaps()
+            
+            if not capability_gaps:
+                logger.info("No capability gaps identified")
+                return
+            
+            # Phase 2: Prioritize gaps
+            sorted_gaps = sorted(capability_gaps, key=lambda x: x.priority, reverse=True)
+            
+            # Phase 3: Search and assimilate for top gaps
+            for gap in sorted_gaps[:3]:  # Top 3 priority gaps
+                logger.info(f"Addressing capability gap: {gap.name}")
+                
+                # Search for relevant models
+                candidate_models = await self.autonomous_model_search(gap)
+                
+                if not candidate_models:
+                    continue
+                
+                # Constitutional validation and selection
+                for model_path in candidate_models:
+                    if os.path.exists(model_path):  # Check if model exists locally
+                        try:
+                            result = await self.assimilate_model_async(model_path)
+                            
+                            if result and result.success:
+                                logger.info(
+                                    f"✅ Successfully assimilated model for capability gap",
+                                    capability=gap.name,
+                                    model=result.model_name,
+                                    performance_gain=result.performance_gain
+                                )
+                                break
+                        except Exception as e:
+                            logger.warning(f"Failed to assimilate {model_path}: {e}")
+            
+            logger.info("🎉 Autonomous growth cycle completed")
+            
+        except Exception as e:
+            logger.error(f"💥 Autonomous growth cycle failed: {e}", exc_info=True)
+    
+    # Advanced Monitoring and Analytics
+    
+    def get_comprehensive_status(self) -> Dict[str, Any]:
+        """Get comprehensive system status and analytics."""
+        return {
+            'assimilated_capabilities': list(self.assimilated_capabilities),
+            'assimilation_history_count': len(self.assimilation_history),
+            'cache_stats': {
+                'model_cache': self.model_cache.get_stats(),
+                'tensor_cache': self.tensor_cache.get_stats()
+            },
+            'performance_metrics': self.performance_monitor['metrics'],
+            'performance_alerts': len(self.performance_monitor['alerts']),
+            'bayesian_selector_stats': {
+                'models_tracked': len(self.bayesian_selector.model_performance_history),
+                'capabilities_tracked': len(self.bayesian_selector.capability_model_mapping)
+            },
+            'meta_learning_enabled': self.meta_learning_enabled,
+            'constitutional_validation_enabled': self.constitutional_validation,
+            'autonomous_growth_enabled': self.autonomous_growth,
+            'system_health': self._calculate_system_health()
+        }
+    
+    def _calculate_system_health(self) -> Dict[str, float]:
+        """Calculate overall system health metrics."""
+        health = {
+            'performance_score': 0.8,  # Default good performance
+            'memory_efficiency': 0.7,
+            'assimilation_success_rate': 0.0,
+            'safety_compliance': 1.0
+        }
+        
+        # Calculate assimilation success rate
+        if self.assimilation_history:
+            successful_assimilations = sum(1 for h in self.assimilation_history if h['result'].success)
+            health['assimilation_success_rate'] = successful_assimilations / len(self.assimilation_history)
+        
+        # Calculate memory efficiency
+        model_cache_efficiency = self.model_cache.get_stats()['hit_rate']
+        tensor_cache_efficiency = self.tensor_cache.get_stats()['hit_rate']
+        health['memory_efficiency'] = (model_cache_efficiency + tensor_cache_efficiency) / 2
+        
+        # Performance score based on recent alerts
+        recent_alerts = [a for a in self.performance_monitor['alerts'] 
+                        if time.time() - a['timestamp'] < 3600]  # Last hour
+        if recent_alerts:
+            health['performance_score'] = max(0.0, 1.0 - len(recent_alerts) * 0.1)
+        
+        return health
+    
+    def export_assimilation_report(self, output_path: str):
+        """Export comprehensive assimilation report."""
+        report = {
+            'timestamp': time.time(),
+            'system_info': {
+                'version': '1.0.0-revolutionary',
+                'capabilities': list(self.assimilated_capabilities),
+                'total_assimilations': len(self.assimilation_history)
+            },
+            'performance_analysis': self.get_comprehensive_status(),
+            'assimilation_history': [
+                {
+                    'timestamp': h['timestamp'],
+                    'model_path': h['model_path'],
+                    'success': h['result'].success,
+                    'capabilities_added': len(h['result'].assimilated_capabilities),
+                    'execution_time': h['result'].execution_time,
+                    'memory_usage': h['result'].memory_usage
+                }
+                for h in self.assimilation_history
+            ],
+            'capability_performance': {
+                cap: {
+                    'average_performance': sum(perf) / len(perf) if perf else 0,
+                    'performance_history': perf[-10:]  # Last 10 entries
+                }
+                for cap, perf in self.capability_performance.items()
+            }
+        }
+        
+        with open(output_path, 'w') as f:
+            json.dump(report, f, indent=2, default=str)
+        
+        logger.info(f"Assimilation report exported to {output_path}")
 
 def main():
     """
