@@ -239,7 +239,7 @@ graph TD
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/calisweetleaf/GPT-Null
 cd gpt-null
 
 # Install dependencies

@@ -1856,6 +1856,15 @@ class GPT_Ø(nn.Module):
             nn.Linear(d_model * 2, d_model),
             nn.LayerNorm(d_model)
         )
+        # --- New Encoder for TOOL modality ---
+        self.tool_encoder = nn.Sequential(
+            nn.Linear(d_model, d_model * 2), # Assuming tool input is also d_model compatible
+            nn.LayerNorm(d_model * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model * 2, d_model),
+            nn.LayerNorm(d_model)
+        )
 
         # --- Neural Routing Gate ---
         self.output_router = nn.Sequential(
