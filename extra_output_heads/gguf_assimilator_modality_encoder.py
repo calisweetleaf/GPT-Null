@@ -2536,7 +2536,7 @@ class GGUFAssimilatorModalityEncoder(nn.Module):
 
         # Project to the expected input dimension of the assimilation network
         current_input_dim = concatenated_tensor.shape[0]
-        expected_input_dim = self.assimilation_network[0].in_features
+        expected_input_dim = self.input_dim
 
         if current_input_dim != expected_input_dim:
             logger.warning(
@@ -3169,12 +3169,14 @@ def main():
             model_path=dummy_pytorch_model_path
         )
 
-        assimilated_pytorch_representation = assimilator.assimilate_model(dummy_pytorch_model_path, model_type="PyTorch")
+        assimilated_pytorch_representation = assimilator.assimilate_model(dummy_pytorch_model_path, model_type="pytorch")
 
-        if assimilated_pytorch_representation is not None:
+        if assimilated_pytorch_representation and assimilated_pytorch_representation.success:
             demo_logger.info(
                 f"Successfully assimilated PyTorch model",
-                representation_shape=assimilated_pytorch_representation.shape
+                model_name=assimilated_pytorch_representation.model_name,
+                capabilities=assimilated_pytorch_representation.assimilated_capabilities,
+                execution_time=assimilated_pytorch_representation.execution_time
             )
         else:
             demo_logger.error("PyTorch model assimilation failed.")
@@ -3192,7 +3194,7 @@ def main():
     demo_logger.info("--- Test Case 2: Raw Binary File Assimilation ---")
     dummy_raw_path = "dummy_raw_data.bin"
     # Create a dummy raw binary file with float32 data
-    raw_data_floats = [float(i) * 0.1 for i in range(assimilator.assimilation_network[0].in_features + 50)] # Some extra data
+    raw_data_floats = [float(i) * 0.1 for i in range(assimilator.input_dim + 50)] # Some extra data
     try:
         with open(dummy_raw_path, 'wb') as f:
             for val in raw_data_floats:
@@ -3202,12 +3204,13 @@ def main():
             file_path=dummy_raw_path
         )
 
-        assimilated_raw_representation = assimilator.assimilate_model(dummy_raw_path, model_type="Raw")
+        assimilated_raw_representation = assimilator.assimilate_model(dummy_raw_path, model_type="raw")
 
-        if assimilated_raw_representation is not None:
+        if assimilated_raw_representation and assimilated_raw_representation.success:
             demo_logger.info(
                 f"Successfully assimilated Raw binary file",
-                representation_shape=assimilated_raw_representation.shape
+                model_name=assimilated_raw_representation.model_name,
+                execution_time=assimilated_raw_representation.execution_time
             )
         else:
             demo_logger.error("Raw binary file assimilation failed.")
@@ -3233,11 +3236,11 @@ def main():
             file_path=dummy_gguf_path
         )
 
-        assimilated_gguf_representation = assimilator.assimilate_model(dummy_gguf_path, model_type="GGUF")
-        if assimilated_gguf_representation is not None:
+        assimilated_gguf_representation = assimilator.assimilate_model(dummy_gguf_path, model_type="gguf")
+        if assimilated_gguf_representation and assimilated_gguf_representation.success:
             demo_logger.info(
-                f"GGUF assimilation result",
-                success=assimilated_gguf_representation is not None
+                f"GGUF assimilation succeeded",
+                model_name=assimilated_gguf_representation.model_name
             )
         else:
             demo_logger.info("GGUF assimilation returned None")
@@ -3265,11 +3268,11 @@ def main():
             file_path=dummy_onnx_path
         )
 
-        assimilated_onnx_representation = assimilator.assimilate_model(dummy_onnx_path, model_type="ONNX")
-        if assimilated_onnx_representation is not None:
+        assimilated_onnx_representation = assimilator.assimilate_model(dummy_onnx_path, model_type="onnx")
+        if assimilated_onnx_representation and assimilated_onnx_representation.success:
             demo_logger.info(
-                f"ONNX assimilation result",
-                success=assimilated_onnx_representation is not None
+                f"ONNX assimilation succeeded",
+                model_name=assimilated_onnx_representation.model_name
             )
         else:
             demo_logger.info("ONNX assimilation returned None")
@@ -3289,7 +3292,7 @@ def main():
     demo_logger.info("--- Test Case 5: Invalid Model Path ---")
     invalid_path = "non_existent_model.pt"
     assimilated_invalid = assimilator.assimilate_model(invalid_path)
-    if assimilated_invalid is None:
+    if assimilated_invalid is None or not assimilated_invalid.success:
         demo_logger.info(
             f"Correctly handled non-existent model path",
             path=invalid_path
@@ -3305,7 +3308,7 @@ def main():
     dummy_dir = "dummy_test_dir"
     os.makedirs(dummy_dir, exist_ok=True)
     assimilated_dir = assimilator.assimilate_model(dummy_dir)
-    if assimilated_dir is None:
+    if assimilated_dir is None or not assimilated_dir.success:
         demo_logger.info(
             f"Correctly handled directory as model path",
             directory=dummy_dir
