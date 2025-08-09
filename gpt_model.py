@@ -1241,15 +1241,18 @@ class OutputRouter(nn.Module):
 
         self.routing_network = nn.Linear(d_model, len(ModalityType))
 
-    def forward(self, hidden_states: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def forward(self, hidden_states: torch.Tensor, original_input_data: Dict[ModalityType, Any]) -> Dict[str, Any]:
         """
-        Routes the hidden states to the appropriate output generator.
+        Routes the final hidden states to the appropriate modality-specific generator.
+        This allows the model to produce multimodal output based on the context.
 
         Args:
-            hidden_states: The final hidden states from the transformer.
+            hidden_states (torch.Tensor): The final hidden states from the transformer.
+            original_input_data (Dict[ModalityType, Any]): The original input data,
+                                                            used to extract metadata for output heads.
 
         Returns:
-            A dictionary containing the output from the selected modality generator.
+            Dict[str, Any]: A dictionary containing the output from the selected modality generator.
         """
         model = self.gpt_model_ref()
         if not model:
@@ -1270,9 +1273,22 @@ class OutputRouter(nn.Module):
         elif selected_modality == ModalityType.STRUCTURED:
             output_data["structured"] = model.structured_data_generator(hidden_states)
         elif selected_modality == ModalityType.TOOL:
-            output_data["tool"] = model.tool_head(hidden_states)
+            # Tool head expects hidden_states and optional config/objectives/safety_constraints
+            # Extract these from original_input_data if available
+            tool_input_data = original_input_data.get(ModalityType.TOOL, {})
+            tool_config = tool_input_data.get('config')
+            tool_objectives = tool_input_data.get('objectives')
+            tool_safety_constraints = tool_input_data.get('safety_constraints')
+            
+            output_data["tool"] = model.tool_head.generate(
+                hidden_states,
+                config=tool_config,
+                objectives=tool_objectives,
+                safety_constraints=tool_safety_constraints
+            )
         elif selected_modality == ModalityType.EYES:
-            eyes_metadata = input_data.get('metadata', {})
+            eyes_input_data = original_input_data.get(ModalityType.EYES, {})
+            eyes_metadata = eyes_input_data.get('metadata', {})
             # Validate required keys for EYES modality
             required_eyes_keys = {"sensor_type", "timestamp"}
             missing_eyes_keys = required_eyes_keys - eyes_metadata.keys()
@@ -1280,15 +1296,33 @@ class OutputRouter(nn.Module):
                 raise ValueError(f"Missing required EYES metadata keys: {missing_eyes_keys}")
             output_data["eyes"] = model.isr_head(hidden_states, operation_metadata=eyes_metadata)
         elif selected_modality == ModalityType.EARS:
-            ears_metadata = input_data.get('metadata', {})
+            ears_input_data = original_input_data.get(ModalityType.EARS, {})
+            ears_metadata = ears_input_data.get('metadata', {})
             # Validate required keys for EARS modality
             required_ears_keys = {"location", "frequency"}
             missing_ears_keys = required_ears_keys - ears_metadata.keys()
             if missing_ears_keys:
                 raise ValueError(f"Missing required EARS metadata keys: {missing_ears_keys}")
             output_data["ears"] = model.spatial_head(hidden_states, spatial_metadata=ears_metadata)
+        elif selected_modality == ModalityType.LIVE_WEB:
+            output_data["live_web"] = model.live_web_action_generator(hidden_states)
+        elif selected_modality == ModalityType.LIDAR:
+            output_data["lidar"] = model.spatial_data_query_generator(hidden_states) # Re-using spatial data query for LiDAR
+        elif selected_modality == ModalityType.GPS:
+            output_data["gps"] = model.spatial_data_query_generator(hidden_states) # Re-using spatial data query for GPS
+        elif selected_modality == ModalityType.CLOCK:
+            output_data["clock"] = model.temporal_data_query_generator(hidden_states)
+        elif selected_modality == ModalityType.RM_RF:
+            output_data["rm_rf"] = model.file_operation_generator(hidden_states)
+        elif selected_modality == ModalityType.ADS_B:
+            output_data["ads_b"] = model.ads_b_query_generator(hidden_states)
+        elif selected_modality == ModalityType.VIDEO:
+            output_data["video"] = model.video_frame_selector(hidden_states)
+        elif selected_modality == ModalityType.EMBEDDING:
+            output_data["embedding"] = model.embedding_projector(hidden_states)
         else:
             # Default to text generation if the modality is not explicitly handled
+            logger.warning(f"Output for modality {selected_modality.value} not explicitly handled. Defaulting to text generation.")
             output_data["text"] = model.text_decoder(hidden_states)
 
         return {
@@ -1379,6 +1413,23 @@ class AudioGenerator(nn.Module):
         x = self.linear(hidden_states)
         x = x.view(hidden_states.size(0), 512, self.initial_len)
         return self.decoder(x)
+
+class TextDecoder(nn.Module):
+    """
+    Generates text from hidden states.
+    """
+    def __init__(self, d_model: int, vocab_size: int):
+        super().__init__()
+        self.projection = nn.Linear(d_model, vocab_size)
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            hidden_states (torch.Tensor): Tensor of shape (batch_size, seq_len, d_model).
+        Returns:
+            torch.Tensor: Logits for the vocabulary, shape (batch_size, seq_len, vocab_size).
+        """
+        return self.projection(hidden_states)
 
 class StructuredDataGenerator(nn.Module):
     """
@@ -1886,10 +1937,1144 @@ class GPT_Ø(nn.Module):
         # --- Architectural Components from TODO ---
         self.input_router = InputRouter(self.config_orchestrator)
         self.output_router = OutputRouter(self.config_orchestrator, self)
+
+    def _get_modality_input_tensor(self, modality_type: ModalityType, data: Any) -> torch.Tensor:
+        """
+        Extracts the tensor from the input data for a given modality.
+        Handles cases where data might be a raw tensor or a dictionary with 'features'.
+        """
+        if isinstance(data, dict):
+            if 'features' not in data:
+                raise ValueError(f"Input data for {modality_type.value} modality must contain 'features' key if it's a dictionary.")
+            return data['features']
+        elif isinstance(data, torch.Tensor):
+            return data
+        else:
+            raise TypeError(f"Input data for {modality_type.value} modality must be a torch.Tensor or a dict containing 'features' key, but got {type(data)}.")
+
+    def _process_multimodal_input(self, input_data: Dict[ModalityType, Any]) -> torch.Tensor:
+        """
+        Processes multimodal input data through their respective encoders and combines them.
+        """
+        encoded_features = []
+        for modality, data in input_data.items():
+            input_tensor = self._get_modality_input_tensor(modality, data)
+            
+            # Ensure input_tensor has a batch dimension
+            if input_tensor.dim() == 1:
+                input_tensor = input_tensor.unsqueeze(0) # Add batch dim
+            if input_tensor.dim() == 2 and modality != ModalityType.TEXT: # For non-text, assume (batch_size, d_model)
+                input_tensor = input_tensor.unsqueeze(1) # Add sequence dim for consistency
+            
+            # Route to appropriate encoder
+            if modality == ModalityType.TEXT:
+                # Assuming text input is already tokenized and embedded to d_model
+                # If raw text, it would need tokenization and embedding here.
+                # For now, assume it's already in the correct d_model shape.
+                if input_tensor.shape[-1] != self.d_model:
+                    raise ValueError(f"Text input tensor last dimension ({input_tensor.shape[-1]}) must match d_model ({self.d_model}).")
+                encoded_features.append(self.text_encoder(input_tensor))
+            elif modality == ModalityType.IMAGE:
+                # ImageEncoder expects (batch_size, 3, H, W) and outputs (batch_size, 1, d_model)
+                encoded_features.append(self.image_encoder(input_tensor))
+            elif modality == ModalityType.AUDIO:
+                # AudioEncoder expects (batch_size, 1, seq_len) and outputs (batch_size, 1, d_model)
+                encoded_features.append(self.audio_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, C, D, H, W) or (batch_size, D, C, H, W)
+                # Assuming it outputs (batch_size, 1, d_model)
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.TOOL:
+                # Tool encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.tool_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            elif modality == ModalityType.LIVE_WEB:
+                # Live web encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            encoded_features.append(self.live_web_encoder(input_tensor))
+            elif modality == ModalityType.LIDAR:
+                # LiDAR encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.lidar_encoder(input_tensor))
+            elif modality == ModalityType.GPS:
+                # GPS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.gps_encoder(input_tensor))
+            elif modality == ModalityType.CLOCK:
+                # Clock encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.clock_encoder(input_tensor))
+            elif modality == ModalityType.RM_RF:
+                # RM_RF encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.rm_rf_encoder(input_tensor))
+            elif modality == ModalityType.ADS_B:
+                # ADS_B encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ads_b_encoder(input_tensor))
+            elif modality == ModalityType.EYES:
+                # EYES encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.eyes_encoder(input_tensor))
+            elif modality == ModalityType.EARS:
+                # EARS encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.ears_encoder(input_tensor))
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, C, D, H, W) or (batch_size, D, C, H, W)
+                # Assuming it outputs (batch_size, 1, d_model)
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
         self.moe_layer = MixtureOfExperts(
             d_model=self.d_model,
             num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
-            expert_capacity=int(self.config_orchestrator.get_parameter_value("model_params.expert_capacity"))
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, C, D, H, W) or (batch_size, D, C, H, W)
+                # Assuming it outputs (batch_size, 1, d_model)
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, C, D, H, W) or (batch_size, D, C, H, W)
+                # Assuming it outputs (batch_size, 1, d_model)
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, C, D, H, W) or (batch_size, D, C, H, W)
+                # Assuming it outputs (batch_size, 1, d_model)
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, C, D, H, W) or (batch_size, D, C, H, W)
+                # Assuming it outputs (batch_size, 1, d_model)
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, C, D, H, W) or (batch_size, D, C, H, W)
+                # Assuming it outputs (batch_size, 1, d_model)
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, C, D, H, W) or (batch_size, D, C, H, W)
+                # Assuming it outputs (batch_size, 1, d_model)
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.video_encoder(input_tensor))
+            elif modality == ModalityType.EMBEDDING:
+                # Embedding encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.embedding_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            elif modality == ModalityType.VIDEO:
+                # Video encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.video_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
+        )
+            elif modality == ModalityType.STRUCTURED:
+                # Structured encoder expects (batch_size, seq_len, d_model) or (batch_size, d_model)
+                if input_tensor.dim() == 2:
+                    input_tensor = input_tensor.unsqueeze(1) # Add sequence dim
+                encoded_features.append(self.structured_encoder(input_tensor))
+            else:
+                logger.warning(f"Unsupported modality: {modality.value}. Skipping encoding.")
+
+        if not encoded_features:
+            raise ValueError("No supported input modalities found to process.")
+
+        # Pad and concatenate encoded features
+        max_seq_len = max(f.shape[1] for f in encoded_features)
+        padded_features = []
+        for f in encoded_features:
+            padding_needed = max_seq_len - f.shape[1]
+            if padding_needed > 0:
+                # Pad along the sequence dimension
+                f = F.pad(f, (0, 0, 0, padding_needed))
+            padded_features.append(f)
+        
+        # Concatenate along the sequence dimension
+        # A more sophisticated approach might use cross-attention or a dedicated fusion module
+        combined_features = torch.cat(padded_features, dim=1)
+        
+        return combined_features
+
+        self.moe_layer = MixtureOfExperts(
+            d_model=self.d_model,
+            num_experts=int(self.config_orchestrator.get_parameter_value("model_params.num_experts")),
+            top_k=int(self.config_orchestrator.get_parameter_value("model_params.top_k_experts", "mean")) # Added top_k
         )
 
         # --- Neural Memory Runtime Integration ---

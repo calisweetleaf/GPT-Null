@@ -21,6 +21,7 @@ import hashlib
 import struct
 import mmap
 import os
+import math
 from typing import Dict, List, Tuple, Optional, Any, Union, Set
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -148,6 +149,33 @@ class PhaseTransformation:
             raise ValidationError("Harmonic components must have consistent dimensions")
 
 @dataclass
+class DeltaComponent:
+    """Delta component for effective weight computation."""
+    base_delta: torch.Tensor
+    depth_scaling: float = 1.0
+    adaptive_factor: torch.Tensor = None
+    
+    def __post_init__(self):
+        """Validate delta component parameters."""
+        validate_tensor_input(self.base_delta, "base_delta")
+        if self.adaptive_factor is not None:
+            validate_tensor_input(self.adaptive_factor, "adaptive_factor")
+            if self.adaptive_factor.shape != self.base_delta.shape:
+                raise ValidationError("Adaptive factor must match base delta shape")
+
+@dataclass
+class StabilityMetrics:
+    """Stability and convergence metrics for recursive weight system."""
+    spectral_radius: float = 0.0
+    lyapunov_coefficient: float = 0.0
+    error_bound: float = 0.0
+    convergence_rate: float = 0.0
+    fractal_dimension: float = 0.0
+    self_similarity_metric: float = 0.0
+    information_capacity: float = 0.0
+    compression_efficiency: float = 0.0
+
+@dataclass
 class RecursiveReference:
     """Recursive reference with transformation matrix."""
     relative_position: torch.Tensor  # 5D position offset
@@ -169,6 +197,8 @@ class RecursiveWeight(nn.Module):
     
     This class provides a production-ready implementation of recursive weights
     with comprehensive error handling, security validation, and performance optimization.
+    Implements the complete mathematical formulation:
+    W_effective(i,t) = Codebook[B] × Scale + Delta[i] + Σ R_j · W_effective(i-1,t-τ_j) + Φ(t) + ε
     """
     
     def __init__(
@@ -178,11 +208,13 @@ class RecursiveWeight(nn.Module):
         phase_transform: PhaseTransformation,
         recursive_refs: List[RecursiveReference],
         error_preservation: torch.Tensor,
+        delta_component: Optional[DeltaComponent] = None,
+        scale_factor: float = 1.0,
         dimension_size: int = 4096,
         config: Optional[RecursiveWeightConfig] = None
     ):
         """
-        Initialize recursive weight with quintuple components.
+        Initialize recursive weight with quintuple components and mathematical formalism.
         
         Args:
             base_codebook_index: Index B into base codebook
@@ -190,6 +222,8 @@ class RecursiveWeight(nn.Module):
             phase_transform: Phase transformation Φ
             recursive_refs: List of recursive references R
             error_preservation: Error preservation term ε
+            delta_component: Delta component for depth-dependent adjustments
+            scale_factor: Scale factor for codebook values
             dimension_size: Size of weight dimensions
             config: Optional configuration
             
@@ -209,9 +243,13 @@ class RecursiveWeight(nn.Module):
         if len(recursive_refs) > 50:  # Security limit
             raise SecurityError("Too many recursive references (max 50)")
         
+        if abs(scale_factor) > 100.0:  # Security bound
+            raise SecurityError("Scale factor exceeds safety bounds")
+        
         # Store configuration
         self.config = config or RecursiveWeightConfig()
         self.dimension_size = dimension_size
+        self.scale_factor = scale_factor
         
         # Store quintuple components
         self.base_codebook_index = base_codebook_index
@@ -223,6 +261,19 @@ class RecursiveWeight(nn.Module):
         self.register_buffer('harmonic_amplitudes', phase_transform.harmonic_amplitudes.clone())
         self.register_buffer('frequencies', phase_transform.frequencies.clone())
         self.register_buffer('phase_offsets', phase_transform.phase_offsets.clone())
+        
+        # Store delta component
+        if delta_component is not None:
+            self.register_buffer('base_delta', delta_component.base_delta.clone())
+            self.delta_depth_scaling = delta_component.depth_scaling
+            if delta_component.adaptive_factor is not None:
+                self.register_buffer('delta_adaptive_factor', delta_component.adaptive_factor.clone())
+            else:
+                self.register_buffer('delta_adaptive_factor', torch.ones_like(delta_component.base_delta))
+        else:
+            self.register_buffer('base_delta', torch.zeros(dimension_size))
+            self.delta_depth_scaling = 1.0
+            self.register_buffer('delta_adaptive_factor', torch.ones(dimension_size))
         
         # Store recursive references
         self.recursive_refs = nn.ModuleList()
@@ -242,8 +293,40 @@ class RecursiveWeight(nn.Module):
         # Stability tracking
         self._stability_state = RecursionStability.STABLE
         self._last_stability_check = 0
+        self._stability_metrics = StabilityMetrics()
+        
+        # Mathematical analysis components
+        self._jacobian_cache = None
+        self._fixed_point_estimate = None
+        
+        # Compute initial stability metrics
+        self._compute_stability_metrics()
         
         logger.info(f"Initialized RecursiveWeight with {len(recursive_refs)} references")
+    
+    def compute_delta_value(self, recursion_depth: int) -> torch.Tensor:
+        """
+        Compute depth-dependent delta value Delta[i].
+        
+        Args:
+            recursion_depth: Current recursion depth i
+            
+        Returns:
+            Delta component tensor
+        """
+        try:
+            # Delta[i] = base_delta * (depth_scaling^i) * adaptive_factor
+            depth_factor = self.delta_depth_scaling ** recursion_depth
+            delta_value = self.base_delta * depth_factor * self.delta_adaptive_factor
+            
+            # Apply security bounds
+            delta_value = torch.clamp(delta_value, -1e3, 1e3)
+            
+            return delta_value
+            
+        except Exception as e:
+            logger.error(f"Delta computation failed: {e}")
+            return torch.zeros_like(self.base_delta)
     
     def compute_phase_value(self, time_step: float) -> torch.Tensor:
         """
@@ -296,7 +379,9 @@ class RecursiveWeight(nn.Module):
         cache_key: Optional[str] = None
     ) -> torch.Tensor:
         """
-        Forward pass computing effective weight value with recursion.
+        Forward pass computing effective weight value with complete mathematical formulation.
+        
+        Implements: W_effective(i,t) = Codebook[B] × Scale + Delta[i] + Σ R_j · W_effective(i-1,t-τ_j) + Φ(t) + ε
         
         Args:
             codebook: Base codebook tensor
@@ -321,6 +406,10 @@ class RecursiveWeight(nn.Module):
         if recursion_depth > self.config.max_recursion_depth:
             raise SecurityError(f"Recursion depth {recursion_depth} exceeds limit {self.config.max_recursion_depth}")
         
+        # Check convergence based on mathematical bounds
+        if self._should_terminate_recursion(recursion_depth, time_step):
+            recursion_depth = 0  # Force base case for stability
+        
         # Check cache first
         if cache_key and cache_key in self._cache:
             with self._cache_lock:
@@ -329,16 +418,19 @@ class RecursiveWeight(nn.Module):
                     return cached_result.clone()
         
         try:
-            # Step 1: Get base value from codebook
+            # Step 1: Get base value from codebook with scale factor
             if self.base_codebook_index >= codebook.shape[0]:
                 raise ValidationError(f"Codebook index {self.base_codebook_index} out of bounds")
             
-            base_value = codebook[self.base_codebook_index].clone()
+            base_value = codebook[self.base_codebook_index].clone() * self.scale_factor
             
-            # Step 2: Compute phase transformation
+            # Step 2: Compute delta component Delta[i]
+            delta_value = self.compute_delta_value(recursion_depth)
+            
+            # Step 3: Compute phase transformation Φ(t)
             phase_value = self.compute_phase_value(time_step)
             
-            # Step 3: Apply recursive references if depth allows
+            # Step 4: Apply recursive references if depth allows
             recursive_component = torch.zeros_like(base_value)
             
             if recursion_depth > 0 and weight_registry:
@@ -350,7 +442,7 @@ class RecursiveWeight(nn.Module):
                     if ref_key in weight_registry and ref_key != cache_key:  # Avoid self-reference
                         ref_weight = weight_registry[ref_key]
                         
-                        # Recursive call with reduced depth
+                        # Recursive call with reduced depth and temporal offset
                         ref_value = ref_weight.forward(
                             codebook,
                             time_step - ref_module.temporal_offset,
@@ -359,7 +451,7 @@ class RecursiveWeight(nn.Module):
                             ref_key
                         )
                         
-                        # Apply transformation matrix
+                        # Apply transformation matrix R_j · W_effective(i-1,t-τ_j)
                         if ref_module.transformation_matrix.shape[0] == ref_value.shape[0]:
                             transformed_value = torch.mv(ref_module.transformation_matrix, ref_value)
                         else:
@@ -377,12 +469,12 @@ class RecursiveWeight(nn.Module):
                         # Add weighted contribution
                         recursive_component += ref_module.contribution_weight * transformed_value
             
-            # Step 4: Combine all components
-            # W_effective = base + phase + recursive + error
-            effective_weight = base_value + phase_value + recursive_component + self.error_preservation
+            # Step 5: Combine all components according to mathematical formulation
+            # W_effective = Codebook[B] × Scale + Delta[i] + Σ R_j · W_effective + Φ(t) + ε
+            effective_weight = base_value + delta_value + recursive_component + phase_value + self.error_preservation
             
-            # Step 5: Apply stability bounds
-            effective_weight = torch.clamp(effective_weight, -1e4, 1e4)
+            # Step 6: Apply stability bounds and convergence checks
+            effective_weight = self._apply_stability_bounds(effective_weight, recursion_depth)
             
             # Update computation tracking
             self._computation_count += 1
@@ -403,39 +495,356 @@ class RecursiveWeight(nn.Module):
             logger.error(f"Forward pass failed: {e}")
             raise ValidationError(f"Forward computation error: {e}")
     
+    def _should_terminate_recursion(self, depth: int, time_step: float) -> bool:
+        """
+        Determine if recursion should terminate based on mathematical convergence criteria.
+        
+        Implements convergence check from Theorem 1.4.2:
+        i_min = ceil(log(ε(1-γ)/C) / log(γ))
+        """
+        try:
+            # Estimate contraction factor γ from reference matrices
+            max_norm = 0.0
+            for ref_module in self.recursive_refs:
+                matrix_norm = torch.norm(ref_module.transformation_matrix, p='fro').item()
+                contribution_norm = abs(ref_module.contribution_weight) * matrix_norm
+                max_norm = max(max_norm, contribution_norm)
+            
+            gamma = max_norm / len(self.recursive_refs) if len(self.recursive_refs) > 0 else 0.0
+            
+            if gamma >= 1.0:
+                return True  # Divergent system, terminate immediately
+            
+            # Estimate minimum depth for convergence
+            epsilon = self.config.convergence_threshold
+            if gamma > 0:
+                min_depth = math.ceil(math.log(epsilon * (1 - gamma)) / math.log(gamma))
+                return depth >= min_depth
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Convergence check failed: {e}")
+            return depth > 5  # Conservative fallback
+    
+    def _apply_stability_bounds(self, weight: torch.Tensor, depth: int) -> torch.Tensor:
+        """
+        Apply stability bounds based on mathematical theorems.
+        
+        Implements bounds from Theorem 1.5.1 (Error Accumulation Bound)
+        and Theorem 1.5.3 (Error Correction Capacity).
+        """
+        try:
+            # Apply basic value bounds
+            bounded_weight = torch.clamp(weight, -1e4, 1e4)
+            
+            # Apply error correction if error preservation term is significant
+            error_magnitude = torch.norm(self.error_preservation).item()
+            if error_magnitude > 0.01:  # Threshold for error correction
+                # Estimate contraction factor
+                gamma = self._estimate_contraction_factor()
+                
+                # Apply error correction bound from Theorem 1.5.3
+                if gamma < 1.0:
+                    max_correction = (1 - gamma) * error_magnitude / (1 + gamma)
+                    correction_mask = torch.abs(bounded_weight) > max_correction
+                    bounded_weight[correction_mask] = torch.sign(bounded_weight[correction_mask]) * max_correction
+            
+            # Apply spectral radius bounds if available
+            if self._stability_metrics.spectral_radius > 0.95:
+                bounded_weight *= 0.9  # Conservative scaling for near-unstable systems
+            
+            return bounded_weight
+            
+        except Exception as e:
+            logger.warning(f"Stability bounds application failed: {e}")
+            return torch.clamp(weight, -1e3, 1e3)  # Fallback bounds
+    
+    def _estimate_contraction_factor(self) -> float:
+        """Estimate contraction factor γ for stability analysis."""
+        try:
+            total_contribution = 0.0
+            for ref_module in self.recursive_refs:
+                matrix_norm = torch.norm(ref_module.transformation_matrix, p='fro').item()
+                total_contribution += abs(ref_module.contribution_weight) * matrix_norm
+            
+            return total_contribution / max(len(self.recursive_refs), 1)
+            
+        except Exception as e:
+            logger.warning(f"Contraction factor estimation failed: {e}")
+            return 1.0  # Conservative estimate
+    
     def _position_to_key(self, position: torch.Tensor) -> str:
         """Convert 5D position to string key."""
         return "_".join(str(int(x.item())) for x in position)
     
-    def _check_stability(self, weight_value: torch.Tensor) -> None:
-        """Check stability of computed weight values."""
+    def _compute_stability_metrics(self) -> None:
+        """
+        Compute comprehensive stability metrics based on mathematical theorems.
+        
+        Implements:
+        - Spectral radius analysis (Theorem 1.5.2)
+        - Fractal dimension calculation (Theorem 1.6.1)
+        - Self-similarity metric (Theorem 1.6.2)
+        - Information capacity (Theorem 1.7.2)
+        - Compression efficiency (Theorem 1.7.3)
+        """
         try:
-            # Check for NaN/Inf
-            if torch.isnan(weight_value).any() or torch.isinf(weight_value).any():
-                self._stability_state = RecursionStability.UNSTABLE
-                logger.warning("Stability check failed: NaN/Inf detected")
-                return
+            # Compute spectral radius of system Jacobian
+            self._stability_metrics.spectral_radius = self._compute_spectral_radius()
             
-            # Check variance for oscillation detection
-            if hasattr(self, '_previous_values'):
-                variance = torch.var(torch.stack(self._previous_values + [weight_value]))
-                if variance > 1e3:  # High variance indicates oscillation
-                    self._stability_state = RecursionStability.OSCILLATING
-                    logger.warning("Stability check: High variance detected")
+            # Compute Lyapunov coefficient
+            self._stability_metrics.lyapunov_coefficient = self._compute_lyapunov_coefficient()
             
-            # Store for next check
-            if not hasattr(self, '_previous_values'):
-                self._previous_values = []
+            # Compute error bounds
+            self._stability_metrics.error_bound = self._compute_error_bound()
             
-            self._previous_values.append(weight_value.clone())
-            if len(self._previous_values) > 10:  # Keep last 10 values
-                self._previous_values.pop(0)
+            # Compute convergence rate
+            self._stability_metrics.convergence_rate = self._compute_convergence_rate()
             
-            self._stability_state = RecursionStability.STABLE
+            # Compute fractal dimension
+            self._stability_metrics.fractal_dimension = self._compute_fractal_dimension()
+            
+            # Compute self-similarity metric
+            self._stability_metrics.self_similarity_metric = self._compute_self_similarity_metric()
+            
+            # Compute information capacity
+            self._stability_metrics.information_capacity = self._compute_information_capacity()
+            
+            # Compute compression efficiency
+            self._stability_metrics.compression_efficiency = self._compute_compression_efficiency()
+            
+            logger.info(f"Computed stability metrics: spectral_radius={self._stability_metrics.spectral_radius:.4f}")
             
         except Exception as e:
-            logger.error(f"Stability check failed: {e}")
-            self._stability_state = RecursionStability.UNSTABLE
+            logger.error(f"Stability metrics computation failed: {e}")
+    
+    def _compute_spectral_radius(self) -> float:
+        """
+        Compute spectral radius ρ(J) for stability analysis (Theorem 1.5.2).
+        
+        Returns:
+            Spectral radius of the system Jacobian
+        """
+        try:
+            if len(self.recursive_refs) == 0:
+                return 0.0
+            
+            # Construct system matrix from recursive references
+            system_matrix = torch.zeros(self.dimension_size, self.dimension_size)
+            
+            for ref_module in self.recursive_refs:
+                weighted_matrix = ref_module.contribution_weight * ref_module.transformation_matrix
+                system_matrix += weighted_matrix
+            
+            # Compute eigenvalues
+            eigenvalues = torch.linalg.eigvals(system_matrix)
+            spectral_radius = torch.max(torch.abs(eigenvalues)).item()
+            
+            return spectral_radius
+            
+        except Exception as e:
+            logger.warning(f"Spectral radius computation failed: {e}")
+            return 1.0  # Conservative estimate
+    
+    def _compute_lyapunov_coefficient(self) -> float:
+        """
+        Compute Lyapunov coefficient for stability analysis (Theorem 1.2.2).
+        
+        Returns:
+            Lyapunov coefficient indicating stability
+        """
+        try:
+            # V(W) = ||W||^2, compute ΔV for stability analysis
+            if len(self.recursive_refs) == 0:
+                return -1.0  # Stable (no recursion)
+            
+            # Estimate ΔV based on reference matrix norms
+            total_norm = 0.0
+            for ref_module in self.recursive_refs:
+                matrix_norm = torch.norm(ref_module.transformation_matrix, p='fro').item()
+                weighted_norm = abs(ref_module.contribution_weight) * matrix_norm
+                total_norm += weighted_norm
+            
+            # Lyapunov coefficient: negative indicates stability
+            lyapunov_coeff = total_norm - 1.0
+            
+            return lyapunov_coeff
+            
+        except Exception as e:
+            logger.warning(f"Lyapunov coefficient computation failed: {e}")
+            return 0.0
+    
+    def _compute_error_bound(self) -> float:
+        """
+        Compute error bound based on Theorem 1.4.1 (Uniform Convergence).
+        
+        Returns:
+            Error bound for reconstruction
+        """
+        try:
+            gamma = self._estimate_contraction_factor()
+            
+            if gamma >= 1.0:
+                return float('inf')  # No convergence guarantee
+            
+            # Error bound: ||W_eff(i,t) - W_eff(∞,t)|| ≤ C·γ^i/(1-γ)
+            C = torch.norm(self.error_preservation).item() + 1.0  # Constant estimate
+            error_bound = C / (1.0 - gamma) if gamma < 1.0 else float('inf')
+            
+            return error_bound
+            
+        except Exception as e:
+            logger.warning(f"Error bound computation failed: {e}")
+            return float('inf')
+    
+    def _compute_convergence_rate(self) -> float:
+        """
+        Compute convergence rate based on Theorem 1.4.2.
+        
+        Returns:
+            Rate of convergence (higher is faster)
+        """
+        try:
+            gamma = self._estimate_contraction_factor()
+            
+            if gamma >= 1.0:
+                return 0.0  # No convergence
+            
+            # Convergence rate is related to -log(γ)
+            convergence_rate = -math.log(gamma) if gamma > 0 else float('inf')
+            
+            return convergence_rate
+            
+        except Exception as e:
+            logger.warning(f"Convergence rate computation failed: {e}")
+            return 0.0
+    
+    def _compute_fractal_dimension(self) -> float:
+        """
+        Compute fractal dimension based on Theorem 1.6.1.
+        
+        Returns:
+            Effective dimension of weight space
+        """
+        try:
+            # D_eff = D_base + Σ D_i / (1 + λ_i)^2
+            D_base = float(self.dimension_size)
+            
+            total_contribution = 0.0
+            for ref_module in self.recursive_refs:
+                # Estimate dimension contribution from reference
+                matrix_rank = torch.linalg.matrix_rank(ref_module.transformation_matrix).item()
+                lambda_i = abs(ref_module.contribution_weight)
+                
+                contribution = matrix_rank / ((1.0 + lambda_i) ** 2)
+                total_contribution += contribution
+            
+            fractal_dimension = D_base + total_contribution
+            
+            return fractal_dimension
+            
+        except Exception as e:
+            logger.warning(f"Fractal dimension computation failed: {e}")
+            return float(self.dimension_size)
+    
+    def _compute_self_similarity_metric(self) -> float:
+        """
+        Compute self-similarity metric based on Theorem 1.6.2.
+        
+        Returns:
+            Self-similarity metric S
+        """
+        try:
+            if len(self.recursive_refs) == 0:
+                return 0.0
+            
+            # S = (1/k) Σ tr(R_i^T R_i) / ||R_i||_F^2
+            total_similarity = 0.0
+            
+            for ref_module in self.recursive_refs:
+                R = ref_module.transformation_matrix
+                trace_value = torch.trace(torch.mm(R.T, R)).item()
+                frobenius_norm_sq = torch.norm(R, p='fro').item() ** 2
+                
+                if frobenius_norm_sq > 1e-8:  # Avoid division by zero
+                    similarity = trace_value / frobenius_norm_sq
+                    total_similarity += similarity
+            
+            self_similarity = total_similarity / len(self.recursive_refs)
+            
+            return self_similarity
+            
+        except Exception as e:
+            logger.warning(f"Self-similarity computation failed: {e}")
+            return 0.0
+    
+    def _compute_information_capacity(self) -> float:
+        """
+        Compute information capacity based on Theorem 1.7.2.
+        
+        Returns:
+            Information capacity in bits
+        """
+        try:
+            # C_info = b + Σ b_i · α_i^i
+            b_base = math.log2(float(self.dimension_size))  # Base bits
+            
+            total_capacity = b_base
+            
+            for i, ref_module in enumerate(self.recursive_refs):
+                # Estimate bits for reference
+                matrix_elements = ref_module.transformation_matrix.numel()
+                b_i = math.log2(float(matrix_elements)) if matrix_elements > 0 else 0.0
+                
+                # Information preservation factor
+                alpha_i = abs(ref_module.contribution_weight)
+                
+                capacity_contribution = b_i * (alpha_i ** (i + 1))
+                total_capacity += capacity_contribution
+            
+            return total_capacity
+            
+        except Exception as e:
+            logger.warning(f"Information capacity computation failed: {e}")
+            return 0.0
+    
+    def _compute_compression_efficiency(self) -> float:
+        """
+        Compute compression efficiency based on Theorem 1.7.3.
+        
+        Returns:
+            Compression efficiency ratio
+        """
+        try:
+            # η_comp = (N · b_quant) / (N_patterns · b_pattern + N_refs · b_ref + N_base · b_base)
+            
+            N = float(self.dimension_size)  # Total weights
+            b_quant = 32.0  # Assume 32-bit standard quantization
+            
+            # Denominator components
+            N_base = 1.0  # One base codebook entry
+            b_base = 32.0  # Bits for base entry
+            
+            N_refs = float(len(self.recursive_refs))
+            b_ref = 32.0 * self.dimension_size  # Bits per reference matrix
+            
+            N_patterns = 1.0  # Assume one pattern (could be more sophisticated)
+            b_pattern = math.log2(float(self.dimension_size))
+            
+            numerator = N * b_quant
+            denominator = N_patterns * b_pattern + N_refs * b_ref + N_base * b_base
+            
+            if denominator > 0:
+                efficiency = numerator / denominator
+            else:
+                efficiency = 1.0
+            
+            return efficiency
+            
+        except Exception as e:
+            logger.warning(f"Compression efficiency computation failed: {e}")
+            return 1.0
     
     def get_stability_state(self) -> RecursionStability:
         """Get current stability state."""
@@ -456,6 +865,328 @@ class RecursiveWeight(nn.Module):
                 'computation_count': self._computation_count,
                 'stability_state': self._stability_state.name
             }
+    
+    def get_stability_metrics(self) -> StabilityMetrics:
+        """Get comprehensive stability metrics."""
+        return self._stability_metrics
+    
+    def compute_fixed_point_estimate(self, codebook: torch.Tensor, time_step: float = 0.0) -> torch.Tensor:
+        """
+        Compute fixed-point estimate based on Theorem 1.2.1 (Fixed-Point Convergence).
+        
+        For γ < 1, fixed point: W_∞ = (Codebook[B] × Scale + Delta + Φ(t) + ε) / (1 - γ)
+        
+        Args:
+            codebook: Base codebook tensor
+            time_step: Time parameter for phase computation
+            
+        Returns:
+            Fixed-point estimate tensor
+        """
+        try:
+            gamma = self._estimate_contraction_factor()
+            
+            if gamma >= 1.0:
+                logger.warning("System may not converge (γ >= 1.0)")
+                return torch.zeros(self.dimension_size)
+            
+            # Compute non-recursive components
+            base_value = codebook[self.base_codebook_index] * self.scale_factor
+            delta_value = self.compute_delta_value(0)  # Use depth 0 for fixed point
+            phase_value = self.compute_phase_value(time_step)
+            
+            # b = base + delta + phase + error
+            b = base_value + delta_value + phase_value + self.error_preservation
+            
+            # Fixed point: W_∞ = b / (1 - γ)
+            fixed_point = b / (1.0 - gamma)
+            
+            self._fixed_point_estimate = fixed_point.clone()
+            
+            return fixed_point
+            
+        except Exception as e:
+            logger.error(f"Fixed-point computation failed: {e}")
+            return torch.zeros(self.dimension_size)
+    
+    def compute_jacobian_matrix(self, codebook: torch.Tensor, time_step: float = 0.0) -> torch.Tensor:
+        """
+        Compute Jacobian matrix for stability analysis.
+        
+        Returns:
+            Jacobian matrix for the recursive system
+        """
+        try:
+            jacobian = torch.zeros(self.dimension_size, self.dimension_size)
+            
+            # Add contributions from recursive references
+            for ref_module in self.recursive_refs:
+                weighted_matrix = ref_module.contribution_weight * ref_module.transformation_matrix
+                jacobian += weighted_matrix
+            
+            self._jacobian_cache = jacobian.clone()
+            
+            return jacobian
+            
+        except Exception as e:
+            logger.error(f"Jacobian computation failed: {e}")
+            return torch.eye(self.dimension_size)
+    
+    def analyze_attractor_dimension(self) -> float:
+        """
+        Analyze attractor dimension based on Theorem 1.2.3.
+        
+        D ≤ min(d, Σlog||R_i|| / log(λ_max))
+        
+        Returns:
+            Estimated attractor dimension
+        """
+        try:
+            d = float(self.dimension_size)
+            
+            if len(self.recursive_refs) == 0:
+                return 0.0
+            
+            # Compute sum of log norms
+            log_norm_sum = 0.0
+            for ref_module in self.recursive_refs:
+                matrix_norm = torch.norm(ref_module.transformation_matrix, p='fro').item()
+                if matrix_norm > 0:
+                    log_norm_sum += math.log(matrix_norm)
+            
+            # Estimate maximum eigenvalue
+            if hasattr(self, '_jacobian_cache') and self._jacobian_cache is not None:
+                eigenvalues = torch.linalg.eigvals(self._jacobian_cache)
+                lambda_max = torch.max(torch.abs(eigenvalues)).item()
+            else:
+                lambda_max = self._estimate_contraction_factor()
+            
+            if lambda_max > 0:
+                dimension_bound = log_norm_sum / math.log(lambda_max)
+                attractor_dim = min(d, dimension_bound)
+            else:
+                attractor_dim = d
+            
+            return max(0.0, attractor_dim)
+            
+        except Exception as e:
+            logger.warning(f"Attractor dimension analysis failed: {e}")
+            return float(self.dimension_size)
+    
+    def compute_mdl_score(self) -> float:
+        """
+        Compute Minimum Description Length score for information efficiency.
+        
+        Based on Theorem 1.7.1: L_MDL = L_data + L_model
+        
+        Returns:
+            MDL score in bits
+        """
+        try:
+            # Model description length
+            num_parameters = (
+                1 +  # base_codebook_index
+                self.dimension_size +  # base_phase
+                self.harmonic_amplitudes.numel() +  # harmonic components
+                self.frequencies.numel() +
+                self.phase_offsets.numel() +
+                self.dimension_size +  # error_preservation
+                sum(ref.transformation_matrix.numel() + ref.relative_position.numel() + 2  # weights + offset
+                    for ref in self.recursive_refs)
+            )
+            
+            # Assume 32-bit precision per parameter
+            L_model = num_parameters * 32.0
+            
+            # Data description length (estimated compression savings)
+            original_size = self.dimension_size * 32.0  # Standard representation
+            compressed_size = L_model
+            
+            L_data = max(0.0, original_size - compressed_size)
+            
+            mdl_score = L_data + L_model
+            
+            return mdl_score
+            
+        except Exception as e:
+            logger.warning(f"MDL score computation failed: {e}")
+            return float('inf')
+    
+    def verify_convergence_bounds(self, tolerance: float = 1e-6) -> Dict[str, Any]:
+        """
+        Verify convergence bounds based on mathematical theorems.
+        
+        Args:
+            tolerance: Convergence tolerance
+            
+        Returns:
+            Dictionary of convergence verification results
+        """
+        try:
+            gamma = self._estimate_contraction_factor()
+            
+            # Theorem 1.4.1: Uniform Convergence
+            uniform_convergence = gamma < 1.0
+            
+            # Theorem 1.4.2: Convergence Rate
+            if gamma > 0 and gamma < 1.0:
+                min_depth = math.ceil(math.log(tolerance * (1 - gamma)) / math.log(gamma))
+            else:
+                min_depth = float('inf')
+            
+            # Theorem 1.5.1: Error Accumulation Bound
+            if gamma < 1.0:
+                error_bound = self._stability_metrics.error_bound
+                bounded_error = error_bound < 1e3  # Reasonable bound
+            else:
+                bounded_error = False
+            
+            return {
+                'uniform_convergence': uniform_convergence,
+                'contraction_factor': gamma,
+                'minimum_depth_for_convergence': min_depth,
+                'error_bounded': bounded_error,
+                'error_bound': self._stability_metrics.error_bound,
+                'spectral_radius': self._stability_metrics.spectral_radius,
+                'lyapunov_stable': self._stability_metrics.lyapunov_coefficient < 0
+            }
+            
+        except Exception as e:
+            logger.error(f"Convergence bounds verification failed: {e}")
+            return {'error': str(e)}
+    
+    def compute_multiscale_representation(self, scales: List[float]) -> Dict[float, torch.Tensor]:
+        """
+        Compute multiscale representation at different temporal scales.
+        
+        Args:
+            scales: List of temporal scales to analyze
+            
+        Returns:
+            Dictionary mapping scales to representation tensors
+        """
+        try:
+            representations = {}
+            
+            # Create dummy codebook for analysis
+            dummy_codebook = torch.randn(max(10, self.base_codebook_index + 1), self.dimension_size)
+            
+            for scale in scales:
+                # Compute representation at this scale
+                scaled_time = 1.0 * scale
+                representation = self.forward(
+                    codebook=dummy_codebook,
+                    time_step=scaled_time,
+                    recursion_depth=1,  # Shallow for analysis
+                    weight_registry=None,
+                    cache_key=f"multiscale_{scale}"
+                )
+                
+                representations[scale] = representation.clone()
+            
+            return representations
+            
+        except Exception as e:
+            logger.error(f"Multiscale representation computation failed: {e}")
+            return {}
+    
+    def analyze_recursive_depth_effects(self, max_depth: int = 5) -> Dict[int, Dict[str, float]]:
+        """
+        Analyze effects of different recursion depths on stability and convergence.
+        
+        Args:
+            max_depth: Maximum depth to analyze
+            
+        Returns:
+            Dictionary mapping depths to analysis metrics
+        """
+        try:
+            depth_analysis = {}
+            
+            # Create dummy codebook for analysis
+            dummy_codebook = torch.randn(max(10, self.base_codebook_index + 1), self.dimension_size)
+            
+            previous_output = None
+            
+            for depth in range(max_depth + 1):
+                output = self.forward(
+                    codebook=dummy_codebook,
+                    time_step=1.0,
+                    recursion_depth=depth,
+                    weight_registry=None,
+                    cache_key=f"depth_analysis_{depth}"
+                )
+                
+                metrics = {
+                    'output_norm': torch.norm(output).item(),
+                    'output_mean': torch.mean(output).item(),
+                    'output_std': torch.std(output).item()
+                }
+                
+                if previous_output is not None:
+                    convergence_error = torch.norm(output - previous_output).item()
+                    metrics['convergence_error'] = convergence_error
+                    metrics['relative_change'] = convergence_error / (torch.norm(previous_output).item() + 1e-8)
+                
+                depth_analysis[depth] = metrics
+                previous_output = output.clone()
+            
+            return depth_analysis
+            
+        except Exception as e:
+            logger.error(f"Recursive depth analysis failed: {e}")
+            return {}
+    
+    def export_mathematical_summary(self) -> Dict[str, Any]:
+        """
+        Export comprehensive mathematical summary of the recursive weight.
+        
+        Returns:
+            Dictionary containing complete mathematical analysis
+        """
+        try:
+            summary = {
+                'quintuple_components': {
+                    'B': self.base_codebook_index,
+                    'T': self.tensor_position.tolist(),
+                    'num_recursive_refs': len(self.recursive_refs),
+                    'dimension_size': self.dimension_size,
+                    'scale_factor': self.scale_factor
+                },
+                'stability_metrics': {
+                    'spectral_radius': self._stability_metrics.spectral_radius,
+                    'lyapunov_coefficient': self._stability_metrics.lyapunov_coefficient,
+                    'error_bound': self._stability_metrics.error_bound,
+                    'convergence_rate': self._stability_metrics.convergence_rate,
+                    'fractal_dimension': self._stability_metrics.fractal_dimension,
+                    'self_similarity_metric': self._stability_metrics.self_similarity_metric,
+                    'information_capacity': self._stability_metrics.information_capacity,
+                    'compression_efficiency': self._stability_metrics.compression_efficiency
+                },
+                'convergence_analysis': self.verify_convergence_bounds(),
+                'attractor_dimension': self.analyze_attractor_dimension(),
+                'mdl_score': self.compute_mdl_score(),
+                'phase_characteristics': {
+                    'num_harmonics': len(self.harmonic_amplitudes),
+                    'frequency_range': [self.frequencies.min().item(), self.frequencies.max().item()],
+                    'amplitude_range': [self.harmonic_amplitudes.min().item(), self.harmonic_amplitudes.max().item()]
+                },
+                'recursive_structure': [
+                    {
+                        'contribution_weight': ref.contribution_weight,
+                        'temporal_offset': ref.temporal_offset,
+                        'matrix_rank': torch.linalg.matrix_rank(ref.transformation_matrix).item(),
+                        'matrix_condition_number': torch.linalg.cond(ref.transformation_matrix).item()
+                    }
+                    for ref in self.recursive_refs
+                ]
+            }
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Mathematical summary export failed: {e}")
+            return {'error': str(e)}
 
 # =============================================================================
 # RECURSIVE WEIGHT REGISTRY AND MANAGEMENT
