@@ -123,14 +123,22 @@ class ExternalServiceError(TokenizerError):
   super().__init__(message, TokenizerErrorCode.EXTERNAL_SERVICE_ERROR, details)
 
 class ModalityType(Enum):
-    """Supported input modalities for tokenization."""
+    """Supported input modalities for tokenization - aligned with gpt_model.py"""
     TEXT = "text"
-    STRUCTURED = "structured"
+    STRUCTURED = "structured"  # For code, JSON, YAML, etc.
     IMAGE = "image"
     AUDIO = "audio"
     VIDEO = "video"
     TOOL = "tool"
     EMBEDDING = "embedding"
+    LIVE_WEB = "live_web"      # Real-time web content processing
+    LIDAR = "lidar"            # 3D spatial point cloud data
+    GPS = "gps"                # Geographic coordinate systems
+    CLOCK = "clock"            # Temporal/chronological data streams
+    RM_RF = "rm_rf"            # File system operations (with safety mechanisms)
+    ADS_B = "ads_b"            # Aircraft tracking and flight data
+    EYES = "eyes"              # ISR (Intelligence, Surveillance, Reconnaissance)
+    EARS = "ears"              # Spatial Domain Processing
 
 class CircuitBreakerState(Enum):
  """Circuit breaker states."""

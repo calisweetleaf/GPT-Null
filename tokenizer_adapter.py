@@ -20,6 +20,7 @@ import asyncio
 import logging
 import time
 import hashlib
+import os
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union, Tuple
 from enum import Enum
@@ -74,6 +75,14 @@ class ModalityType(Enum):
     ADS_B = "ads_b"            # Aircraft tracking and flight data
     EYES = "eyes"              # ISR (Intelligence, Surveillance, Reconnaissance)
     EARS = "ears"              # Spatial Domain Processing
+    
+    # NEW: Model Assimilation Modalities
+    GGUF_MODEL = "gguf_model"
+    ONNX_MODEL = "onnx_model"
+    PYTORCH_MODEL = "pytorch_model"
+    HUGGINGFACE_MODEL = "huggingface_model"
+    RAW_BINARY = "raw_binary"
+    NEURAL_PATTERNS = "neural_patterns"
 
 class TokenizerAdapter:
     """
@@ -142,6 +151,7 @@ class TokenizerAdapter:
         logger.info(f"TokenizerAdapter initialized with {len(ModalityType)} modalities")
         logger.info(f"Core modalities (tokenizer_mux): {[m.value for m in TokenizerModalityType]}")
         logger.info(f"Extended modalities (fallback): {[m.value for m in ModalityType if m.value not in [tm.value for tm in TokenizerModalityType]]}")
+        logger.info(f"Model assimilation modalities: {[m.value for m in ModalityType if 'model' in m.value or m.value in ['raw_binary', 'neural_patterns']]}")
 
     def _load_config(self) -> None:
         """Load configuration from JSON file."""
@@ -166,7 +176,7 @@ class TokenizerAdapter:
             self.base_tokenizer = SentencePieceBPETokenizer()
 
     def _init_special_tokens(self) -> None:
-        """Initialize special tokens for all 13 modalities aligned with gpt_model.py."""
+        """Initialize special tokens for all modalities including model assimilation."""
         self.special_tokens = {
             # Core modality tokens (supported by tokenizer_mux)
             "<|text_start|>": 50257,
@@ -203,6 +213,28 @@ class TokenizerAdapter:
             "<|ears_start|>": 50305,
             "<|ears_end|>": 50306,
 
+            # NEW: Model Assimilation Tokens
+            "<|gguf_model_start|>": 50307,
+            "<|gguf_model_end|>": 50308,
+            "<|onnx_model_start|>": 50309,
+            "<|onnx_model_end|>": 50310,
+            "<|pytorch_model_start|>": 50311,
+            "<|pytorch_model_end|>": 50312,
+            "<|huggingface_model_start|>": 50313,
+            "<|huggingface_model_end|>": 50314,
+            "<|raw_binary_start|>": 50315,
+            "<|raw_binary_end|>": 50316,
+            "<|neural_patterns_start|>": 50317,
+            "<|neural_patterns_end|>": 50318,
+            
+            # Model Assimilation Control Tokens
+            "<|assimilation_start|>": 50319,
+            "<|assimilation_end|>": 50320,
+            "<|capability_transfer|>": 50321,
+            "<|weight_merge|>": 50322,
+            "<|constitutional_check|>": 50323,
+            "<|bayesian_select|>": 50324,
+
             # Reasoning and control tokens
             "<|reasoning_start|>": 50283,
             "<|reasoning_end|>": 50284,
@@ -235,7 +267,7 @@ class TokenizerAdapter:
         # Create reverse mapping for token ID to string
         self.id_to_token = {v: k for k, v in self.special_tokens.items()}
         
-        logger.info(f"Initialized {len(self.special_tokens)} special tokens for 13 modalities")
+        logger.info(f"Initialized {len(self.special_tokens)} special tokens for model assimilation modalities")
 
     def _init_extended_modality_configs(self) -> None:
         """Initialize configuration for extended modalities that require fallback processing."""
@@ -282,6 +314,36 @@ class TokenizerAdapter:
             ModalityType.EARS: {
                 "max_signals": self.config.get("ears_max_signals", 2048),
                 "encoding_method": "spatial_grid"
+            },
+            # NEW: Model Assimilation Modalities
+            ModalityType.GGUF_MODEL: {
+                "max_file_size": self.config.get("gguf_max_file_size", 10 * 1024 * 1024 * 1024),  # 10GB
+                "safety_validation": True,
+                "encoding_method": "model_assimilation"
+            },
+            ModalityType.ONNX_MODEL: {
+                "max_file_size": self.config.get("onnx_max_file_size", 5 * 1024 * 1024 * 1024),  # 5GB
+                "safety_validation": True,
+                "encoding_method": "model_assimilation"
+            },
+            ModalityType.PYTORCH_MODEL: {
+                "max_file_size": self.config.get("pytorch_max_file_size", 5 * 1024 * 1024 * 1024),  # 5GB
+                "safety_validation": True,
+                "encoding_method": "model_assimilation"
+            },
+            ModalityType.HUGGINGFACE_MODEL: {
+                "max_file_size": self.config.get("hf_max_file_size", 5 * 1024 * 1024 * 1024),  # 5GB
+                "safety_validation": True,
+                "encoding_method": "model_assimilation"
+            },
+            ModalityType.RAW_BINARY: {
+                "max_file_size": self.config.get("raw_max_file_size", 1 * 1024 * 1024 * 1024),  # 1GB
+                "safety_validation": True,
+                "encoding_method": "binary_assimilation"
+            },
+            ModalityType.NEURAL_PATTERNS: {
+                "max_pattern_size": self.config.get("pattern_max_size", 1024 * 1024),  # 1MB
+                "encoding_method": "pattern_recognition"
             }
         }
         
@@ -460,7 +522,12 @@ class TokenizerAdapter:
             start_time.record()
         
         try:
-            if modality == ModalityType.LIVE_WEB:
+            if modality in [ModalityType.GGUF_MODEL, ModalityType.ONNX_MODEL, 
+                           ModalityType.PYTORCH_MODEL, ModalityType.HUGGINGFACE_MODEL,
+                           ModalityType.RAW_BINARY, ModalityType.NEURAL_PATTERNS]:
+                # Route to GGUF assimilator for model processing
+                tokens = self._process_model_assimilation(data, modality)
+            elif modality == ModalityType.LIVE_WEB:
                 tokens = self._process_live_web_data(data)
             elif modality == ModalityType.LIDAR:
                 tokens = self._process_lidar_data(data)
@@ -512,6 +579,117 @@ class TokenizerAdapter:
                 processing_time_ms=0.0,
                 cached=False
             )
+
+    def _process_model_assimilation(self, inputs: Any, modality: ModalityType) -> torch.Tensor:
+        """Process model assimilation inputs through GGUF assimilator."""
+        
+        # Import here to avoid circular dependencies
+        try:
+            from extra_output_heads.gguf_assimilator_modality_encoder import GGUFAssimilatorModalityEncoder
+        except ImportError:
+            logger.warning("GGUF assimilator not available, using fallback tokenization")
+            return self._generic_fallback_tokenization(inputs)
+        
+        # Create assimilator instance (should be cached)
+        if not hasattr(self, '_gguf_assimilator'):
+            self._gguf_assimilator = GGUFAssimilatorModalityEncoder(
+                input_dim=self.d_model,
+                hidden_dim=self.d_model * 2,
+                output_dim=self.d_model
+            )
+        
+        try:
+            # Convert model path/data to tokenized representation
+            if isinstance(inputs, str) and os.path.exists(inputs):
+                # File path input
+                model_type = modality.value.replace('_model', '')
+                assimilation_result = self._gguf_assimilator.assimilate_model(inputs, model_type)
+                
+                if assimilation_result and assimilation_result.success:
+                    # Convert assimilated representation to tokens
+                    token_tensor = self._convert_assimilation_to_tokens(assimilation_result)
+                    return token_tensor
+                else:
+                    logger.warning(f"Model assimilation failed for {inputs}")
+                    return self._create_fallback_result(inputs, modality)
+            else:
+                # Direct tensor/data input
+                return self._process_direct_model_data(inputs, modality)
+                
+        except Exception as e:
+            logger.error(f"Model assimilation processing failed: {e}")
+            return self._create_fallback_result(inputs, modality)
+
+    def _convert_assimilation_to_tokens(self, assimilation_result) -> torch.Tensor:
+        """Convert assimilation result to token representation."""
+        # This creates a tokenized representation of the assimilated model
+        # that can be processed by the main transformer
+        
+        # Start with capability embedding
+        capability_tokens = []
+        for capability in assimilation_result.assimilated_capabilities:
+            # Convert capability names to token IDs
+            cap_hash = hash(capability) % 50000  # Simple hash to token ID
+            capability_tokens.append(cap_hash)
+        
+        # Add performance metrics as tokens
+        performance_tokens = []
+        for metric, value in assimilation_result.performance_gain.items():
+            # Quantize performance values to token range
+            quantized_value = int(value * 1000) % 50000
+            performance_tokens.append(quantized_value)
+        
+        # Combine into final token sequence
+        all_tokens = capability_tokens + performance_tokens
+        
+        # Pad or truncate to expected sequence length
+        target_length = min(512, len(all_tokens))  # Reasonable sequence length
+        if len(all_tokens) < target_length:
+            all_tokens.extend([0] * (target_length - len(all_tokens)))  # Pad with 0
+        else:
+            all_tokens = all_tokens[:target_length]  # Truncate
+        
+        return torch.tensor(all_tokens, dtype=torch.long).unsqueeze(0)
+
+    def _process_direct_model_data(self, inputs: Any, modality: ModalityType) -> torch.Tensor:
+        """Process direct model data (tensors, arrays, etc.)."""
+        if isinstance(inputs, torch.Tensor):
+            # For tensor inputs, apply appropriate modality tokens
+            start_token_key = f"<|{modality.value}_start|>"
+            end_token_key = f"<|{modality.value}_end|>"
+            
+            start_token = self.special_tokens.get(start_token_key, self.special_tokens["<|neural_patterns_start|>"])
+            end_token = self.special_tokens.get(end_token_key, self.special_tokens["<|neural_patterns_end|>"])
+            
+            # Flatten and quantize tensor for tokenization
+            flattened = inputs.flatten()[:1024]  # Limit size
+            quantized = (torch.abs(flattened) * 1000).long()  # Simple quantization
+            
+            # Combine with special tokens
+            start_tensor = torch.tensor([start_token], dtype=torch.long)
+            end_tensor = torch.tensor([end_token], dtype=torch.long)
+            
+            return torch.cat([start_tensor, quantized, end_tensor]).unsqueeze(0)
+        else:
+            # Fallback to generic processing
+            return self._generic_fallback_tokenization(inputs)
+
+    def _create_fallback_result(self, inputs: Any, modality: ModalityType) -> torch.Tensor:
+        """Create fallback result for failed model assimilation."""
+        try:
+            # Try to convert to string and tokenize
+            data_str = str(inputs)
+            start_token_key = f"<|{modality.value}_start|>"
+            end_token_key = f"<|{modality.value}_end|>"
+            
+            # Add modality-specific tokens if available
+            if start_token_key in self.special_tokens and end_token_key in self.special_tokens:
+                data_str = f"{start_token_key}{data_str}{end_token_key}"
+            
+            encoded = self.encode(data_str)
+            return torch.tensor(encoded, dtype=torch.long).unsqueeze(0)
+        except:
+            return torch.zeros((1, 1), dtype=torch.long)
 
     def _process_live_web_data(self, data: Any) -> torch.Tensor:
         """Process live web data into tokens."""

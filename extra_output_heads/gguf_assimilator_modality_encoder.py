@@ -13,6 +13,7 @@ import json
 import pickle
 import base64
 import gzip
+import zlib
 import numpy as np
 import math
 import random
@@ -36,11 +37,11 @@ import shutil
 import weakref
 import copy
 import itertools
+import traceback
 from queue import PriorityQueue, Queue, Empty
 import multiprocessing as mp
 from multiprocessing import shared_memory
 import sqlite3
-import pickle
 import zlib
 try:
     import resource
@@ -146,7 +147,6 @@ class StructuredLogger:
     
     def _get_stack_info(self) -> str:
         """Get sanitized stack information."""
-        import traceback
         stack = traceback.format_stack()
         # Return last 3 frames, excluding logger internals
         return '|'.join(stack[-4:-1])

@@ -1,0 +1,69 @@
+# Add to agent_config.yaml - GGUF Assimilation Configuration
+
+# ===== MODEL ASSIMILATION SYSTEM =====
+model_assimilation:
+  enabled: true
+  max_concurrent_assimilations: 3
+  memory_budget_gb: 4.0  # Part of 8GB constraint
+  
+  # Model Repository Configuration
+  repositories:
+    huggingface:
+      enabled: true
+      cache_dir: "./model_cache/huggingface"
+      max_cache_size_gb: 10.0
+      api_token: null  # Set via environment variable
+      
+    ollama:
+      enabled: true
+      base_url: "http://localhost:11434"
+      cache_dir: "./model_cache/ollama"
+      
+    local:
+      enabled: true
+      search_paths:
+        - "./models"
+        - "./custom_models"
+        - "~/models"
+      
+    github:
+      enabled: false  # Disabled by default for security
+      allowed_repos: []
+  
+  # Security Configuration
+  security:
+    validation_enabled: true
+    max_file_size_gb: 10.0
+    allowed_extensions: [".gguf", ".onnx", ".pt", ".pth", ".bin", ".safetensors"]
+    dangerous_pattern_detection: true
+    quarantine_suspicious_models: true
+    constitutional_validation: true
+    
+    # Whitelist of trusted model sources
+    trusted_sources:
+      - "microsoft"
+      - "openai"
+      - "anthropic"
+      - "huggingface"
+      - "meta-llama"
+    
+  # Assimilation Strategies
+  strategies:
+    default_strategy: "bayesian_optimization"
+    
+    strategies_config:
+      recursive_merge:
+        weight_interpolation_factor: 0.3
+        preserve_original_weights: true
+        
+      capability_extraction:
+        extract_top_k_capabilities: 5
+        minimum_capability_score: 0.7
+        
+      knowledge_distillation:
+        temperature: 3.0
+        alpha: 0.7
+        
+      bayesian_optimization:
+        exploration_rate: 0.1
+        acquisition_function: "expecte

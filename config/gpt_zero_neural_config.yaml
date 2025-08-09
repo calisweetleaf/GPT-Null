@@ -1,0 +1,322 @@
+# ============================================================================
+# GPT-Ø Neural Model Manager Configuration
+# ============================================================================
+# Configuration for loading GPT-Ø through Somnus Neural Model Manager
+# Integrates with 5-tier neural memory runtime and CAS orchestration
+# ============================================================================
+
+# Model identification
+model_id: "gpt-zero-33b-multimodal"
+model_name: "GPT-Ø Revolutionary Self-Modifying Transformer"
+version: "1.0.0-alpha"
+model_type: "pytorch_native"
+
+# File paths and loading configuration
+model_config:
+  # Primary model file
+  model_file: "gpt_model.py"
+  model_class: "GPT_Ø"
+  
+  # Supporting components
+  tokenizer_file: "tokenizer_adapter.py"
+  tokenizer_class: "TokenizerAdapter"
+  
+  # Recursive weights system
+  recursive_weights_file: "recursive_weights_core.py"
+  recursive_weights_class: "RecursiveWeightRegistry"
+  
+  # Neural memory runtime
+  memory_runtime_file: "cas/neural_memory_runtime.py" 
+  memory_runtime_class: "NeuralMemoryRuntime"
+  
+  # Bayesian configuration orchestrator
+  config_orchestrator_file: "bayesian_config_orchestrator.py"
+  config_orchestrator_class: "BayesianConfigurationOrchestrator"
+  
+  # GGUF assimilator
+  gguf_assimilator_file: "gguf_assimilator_modality_encoder.py"
+  gguf_assimilator_class: "GGUFAssimilatorModalityEncoder"
+  
+  # Output heads
+  output_heads:
+    tool_head: "extra_output_heads/tool_output_head.py"
+    eyes_head: "extra_output_heads/eyes_outputs.py"
+    ears_head: "extra_output_heads/ears_outputs.py"
+
+# Hardware and resource configuration
+hardware_config:
+  # Device allocation
+  device: "auto"  # auto-detect CPU/GPU
+  gpu_memory_fraction: 0.8
+  cpu_threads: 0  # auto-detect
+  
+  # Memory constraints (aligned with Somnus 8GB limit)
+  max_memory_gb: 8.0
+  model_memory_budget_gb: 6.0  # Leave 2GB for system
+  
+  # Precision and optimization
+  precision: "mixed"  # fp16/fp32 mixed precision
+  torch_compile: true
+  gradient_checkpointing: true
+
+# Neural Memory Runtime Integration
+neural_memory_config:
+  # 5-tier hierarchy configuration
+  tier_config:
+    ultra_hot:
+      size_gb: 0.6    # 10% of 6GB model budget
+      access_pattern: "immediate"
+      eviction_policy: "lru"
+      
+    hot:
+      size_gb: 1.5    # 25% of model budget
+      access_pattern: "recent"
+      eviction_policy: "lfu"
+      
+    warm:
+      size_gb: 2.1    # 35% of model budget
+      access_pattern: "frequent"
+      eviction_policy: "adaptive"
+      
+    cold:
+      size_gb: 1.5    # 25% of model budget
+      access_pattern: "historical"
+      eviction_policy: "time_based"
+      
+    frozen:
+      size_gb: 0.3    # 5% of model budget
+      access_pattern: "archive"
+      eviction_policy: "manual"
+
+  # Memory optimization settings
+  compression_enabled: true
+  compression_algorithm: "neural_sparse"
+  sparse_attention_ratio: 0.1
+  context_summarization: true
+  
+  # Memory monitoring
+  memory_monitoring: true
+  memory_alerts: true
+  automatic_cleanup: true
+
+# Model Loading Configuration
+loading_config:
+  # Initialization sequence
+  initialization_order:
+    1. "neural_memory_runtime"
+    2. "recursive_weights_core"
+    3. "bayesian_config_orchestrator"
+    4. "tokenizer_adapter"
+    5. "gpt_model_backbone"
+    6. "output_heads"
+    7. "gguf_assimilator"
+  
+  # Loading parameters
+  lazy_loading: true
+  progressive_loading: true
+  checkpoint_validation: true
+  
+  # Error handling
+  fallback_mode: "safe_defaults"
+  recovery_attempts: 3
+  timeout_seconds: 300
+
+# Model Parameters (aligned with agent_config.yaml)
+model_parameters:
+  # Architecture parameters
+  d_model: 10192
+  n_layers: 48
+  n_heads: 64
+  vocab_size: 200000
+  max_seq_len: 2048000  # 2M token context
+  
+  # Modality configuration
+  modalities:
+    - "text"
+    - "structured" 
+    - "image"
+    - "audio"
+    - "video"
+    - "tool"
+    - "embedding"
+    - "live_web"
+    - "lidar"
+    - "gps"
+    - "clock"
+    - "rm_rf"
+    - "ads_b"
+    - "gguf_model"      # New: GGUF assimilation
+    - "onnx_model"      # New: ONNX assimilation
+    - "pytorch_model"   # New: PyTorch assimilation
+    - "neural_patterns" # New: Pattern assimilation
+  
+  # Recursive weights parameters
+  recursive_weights:
+    base_coefficient: 1.0
+    phase_coefficient: 0.3
+    reference_coefficient: 0.2
+    temporal_coefficient: 0.1
+    epsilon_noise: 0.01
+  
+  # Self-modification parameters
+  self_modification:
+    enabled: true
+    adaptation_rate: 0.02
+    constitutional_validation: true
+    rollback_capability: true
+
+# Performance and Monitoring
+performance_config:
+  # Inference optimization
+  batch_size: 1  # Start with single batch
+  max_batch_size: 8
+  sequence_parallelism: true
+  pipeline_parallelism: false
+  
+  # Caching configuration
+  kv_cache_enabled: false  # Using neural memory instead
+  attention_cache_size: 1024
+  
+  # Monitoring and metrics
+  performance_monitoring: true
+  latency_tracking: true
+  memory_profiling: true
+  throughput_measurement: true
+  
+  # Performance targets
+  target_latency_ms: 500
+  target_throughput_tokens_per_sec: 50
+  memory_efficiency_target: 0.85
+
+# Constitutional AI Integration
+constitutional_config:
+  # Safety framework
+  constitutional_validation: true
+  safety_mode: "balanced"
+  
+  # Governance integration
+  governance_file: "cas/cas_system.py"
+  governance_class: "ConstitutionalGovernor"
+  
+  # Validation rules
+  pre_response_validation: true
+  post_response_monitoring: true
+  adaptation_validation: true
+  assimilation_validation: true
+
+# Model Assimilation Configuration
+assimilation_config:
+  # Assimilation capabilities
+  gguf_assimilation: true
+  onnx_assimilation: true
+  pytorch_assimilation: true
+  
+  # Resource allocation for assimilation
+  assimilation_memory_budget_gb: 2.0
+  max_concurrent_assimilations: 1
+  
+  # Safety and validation
+  pre_assimilation_scanning: true
+  constitutional_validation: true
+  quarantine_suspicious_models: true
+  
+  # Integration strategy
+  default_strategy: "recursive_weight_integration"
+  capability_extraction: true
+  performance_monitoring: true
+
+# Output Head Configuration
+output_heads_config:
+  # Tool output head
+  tool_head:
+    enabled: true
+    memory_allocation_mb: 512
+    autonomous_synthesis: true
+    safety_validation: true
+    
+  # ISR output head (eyes)
+  eyes_head:
+    enabled: true
+    memory_allocation_mb: 256
+    security_level: "sovereign"
+    threat_assessment: true
+    
+  # Spatial output head (ears)
+  ears_head:
+    enabled: true
+    memory_allocation_mb: 256
+    spatial_processing: true
+    multi_sensor_fusion: true
+
+# Development and Debugging
+development_config:
+  # Logging configuration
+  log_level: "INFO"
+  log_file: "./logs/gpt_zero_neural_manager.log"
+  
+  # Debug features
+  debug_mode: false
+  profiling_enabled: true
+  memory_debugging: true
+  
+  # Development tools
+  hot_reloading: false  # Disable in production
+  checkpoint_saving: true
+  model_introspection: true
+
+# Integration Hooks
+integration_hooks:
+  # Pre-initialization hooks
+  pre_init:
+    - "validate_hardware_requirements"
+    - "check_memory_availability"
+    - "verify_file_integrity"
+  
+  # Post-initialization hooks
+  post_init:
+    - "register_with_cas_system"
+    - "initialize_constitutional_framework"
+    - "setup_performance_monitoring"
+    - "enable_self_modification_capabilities"
+  
+  # Runtime hooks
+  runtime:
+    - "monitor_memory_usage"
+    - "validate_constitutional_compliance"
+    - "track_performance_metrics"
+    - "manage_model_assimilation_queue"
+  
+  # Shutdown hooks
+  shutdown:
+    - "save_adaptation_state"
+    - "cleanup_memory_tiers"
+    - "export_performance_metrics"
+    - "validate_model_integrity"
+
+# Error Handling and Recovery
+error_handling:
+  # Error categories
+  memory_errors:
+    action: "tier_reallocation"
+    retry_attempts: 3
+    fallback: "reduce_memory_usage"
+  
+  constitutional_violations:
+    action: "immediate_halt"
+    rollback: true
+    notification: "admin_alert"
+  
+  assimilation_errors:
+    action: "quarantine_model"
+    investigation: true
+    user_notification: true
+  
+  # Recovery strategies
+  automatic_recovery: true
+  recovery_timeout_minutes: 5
+  manual_intervention_threshold: 3
+  
+  # Backup and restore
+  checkpoint_frequency_minutes: 30
+  checkpoint_retention_hours: 72
+  automatic_backup: true
