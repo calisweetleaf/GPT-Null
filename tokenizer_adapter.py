@@ -152,6 +152,7 @@ class TokenizerAdapter:
         logger.info(f"Core modalities (tokenizer_mux): {[m.value for m in TokenizerModalityType]}")
         logger.info(f"Extended modalities (fallback): {[m.value for m in ModalityType if m.value not in [tm.value for tm in TokenizerModalityType]]}")
         logger.info(f"Model assimilation modalities: {[m.value for m in ModalityType if 'model' in m.value or m.value in ['raw_binary', 'neural_patterns']]}")
+        logger.info(f"Native GPT-Ø modalities supported: {[m.value for m in ModalityType if m.value in ['eyes', 'ears', 'live_web', 'lidar', 'gps', 'clock', 'rm_rf', 'ads_b']]}")
 
     def _load_config(self) -> None:
         """Load configuration from JSON file."""

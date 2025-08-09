@@ -938,6 +938,170 @@ class VideoProcessor(ModalityProcessor):
     TOKENIZATION_ERRORS.labels(modality="video", error_type=type(e).__name__).inc()
     raise TokenizationError(f"Failed to tokenize video: {str(e)}", {"error": str(e)})
 
+
+class ToolProcessor(ModalityProcessor):
+    """Processor for tool call inputs."""
+    
+    def __init__(self, config: TokenizerConfig):
+        super().__init__(config)
+        self.text_processor = TextProcessor(config)
+    
+    async def preprocess(self, tool_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Preprocess tool call data."""
+        try:
+            # Extract tool name and parameters
+            tool_name = tool_data.get("name", "")
+            tool_params = tool_data.get("parameters", {})
+            tool_description = tool_data.get("description", "")
+            
+            # Create structured representation
+            tool_text = f"TOOL:{tool_name} PARAMS:{json.dumps(tool_params)} DESC:{tool_description}"
+            preprocessed_text = await self.text_processor.preprocess(tool_text)
+            
+            return {
+                "text": preprocessed_text,
+                "raw_data": tool_data,
+                "tool_name": tool_name,
+                "parameters": tool_params
+            }
+        except Exception as e:
+            logger.error(f"Tool preprocessing error: {str(e)}")
+            raise PreprocessingError(f"Failed to preprocess tool data: {str(e)}", {"error": str(e)})
+    
+    def tokenize(self, preprocessed_data: Dict[str, Any]) -> TokenizationResult:
+        """Tokenize preprocessed tool data."""
+        text_result = self.text_processor.tokenize(preprocessed_data["text"])
+        
+        return TokenizationResult(
+            tokens=text_result.tokens,
+            attention_mask=text_result.attention_mask,
+            modality=ModalityType.TOOL,
+            source_shape=text_result.source_shape,
+            processing_time_ms=text_result.processing_time_ms,
+            cached=text_result.cached,
+            source_flag=text_result.source_flag,
+            metadata={
+                "type": "tool",
+                "tool_name": preprocessed_data.get("tool_name", ""),
+                "parameter_count": len(preprocessed_data.get("parameters", {}))
+            }
+        )
+
+
+class EmbeddingProcessor(ModalityProcessor):
+    """Processor for embedding inputs."""
+    
+    def __init__(self, config: TokenizerConfig):
+        super().__init__(config)
+        self.embedding_dim = config.vqvae_embedding_dim
+    
+    async def preprocess(self, embedding: torch.Tensor) -> torch.Tensor:
+        """Preprocess embedding tensor."""
+        try:
+            if not isinstance(embedding, torch.Tensor):
+                embedding = torch.tensor(embedding, dtype=torch.float32)
+            
+            # Normalize embedding
+            if embedding.dim() == 1:
+                embedding = embedding.unsqueeze(0)
+            
+            # Ensure correct dimension
+            if embedding.shape[-1] != self.embedding_dim:
+                # Project to correct dimension
+                projection = torch.nn.Linear(embedding.shape[-1], self.embedding_dim)
+                embedding = projection(embedding)
+            
+            return embedding
+        except Exception as e:
+            logger.error(f"Embedding preprocessing error: {str(e)}")
+            raise PreprocessingError(f"Failed to preprocess embedding: {str(e)}", {"error": str(e)})
+    
+    def tokenize(self, embedding: torch.Tensor) -> TokenizationResult:
+        """Tokenize preprocessed embedding."""
+        with self._timed_operation("Embedding tokenization"):
+            start_time = time.perf_counter()
+            
+            try:
+                # Quantize embedding to discrete tokens
+                # Simple quantization - divide into bins
+                normalized = torch.nn.functional.normalize(embedding, dim=-1)
+                quantized = (normalized * 1000).long().clamp(-32767, 32767) + 32768
+                tokens = quantized.flatten()
+                
+                attention_mask = torch.ones(tokens.shape[0], dtype=torch.bool)
+                
+                processing_time_ms = (time.perf_counter() - start_time) * 1000
+                
+                return TokenizationResult(
+                    tokens=tokens,
+                    attention_mask=attention_mask,
+                    modality=ModalityType.EMBEDDING,
+                    source_shape=embedding.shape,
+                    processing_time_ms=processing_time_ms,
+                    cached=False,
+                    source_flag="embedding",
+                    metadata={
+                        "type": "embedding",
+                        "embedding_dim": embedding.shape[-1],
+                        "quantization_bins": 65536
+                    }
+                )
+            except Exception as e:
+                processing_time_ms = (time.perf_counter() - start_time) * 1000
+                logger.error(f"Embedding tokenization failed: {str(e)}")
+                TOKENIZATION_ERRORS.labels(modality="embedding", error_type=type(e).__name__).inc()
+                raise TokenizationError(f"Failed to tokenize embedding: {str(e)}", {"error": str(e)})
+
+
+class ExtendedModalityProcessor(ModalityProcessor):
+    """Generic processor for extended modalities (LIVE_WEB, LIDAR, GPS, etc.)."""
+    
+    def __init__(self, config: TokenizerConfig, modality_type: ModalityType):
+        super().__init__(config)
+        self.modality_type = modality_type
+        self.text_processor = TextProcessor(config)
+    
+    async def preprocess(self, data: Any) -> str:
+        """Preprocess extended modality data to text representation."""
+        try:
+            if isinstance(data, dict):
+                # Convert dict to structured text
+                text_repr = f"{self.modality_type.value.upper()}:{json.dumps(data)}"
+            elif isinstance(data, (list, tuple)):
+                # Convert sequence to structured text
+                text_repr = f"{self.modality_type.value.upper()}:{json.dumps(list(data))}"
+            elif hasattr(data, '__dict__'):
+                # Convert object to dict then text
+                text_repr = f"{self.modality_type.value.upper()}:{json.dumps(data.__dict__)}"
+            else:
+                # Convert to string
+                text_repr = f"{self.modality_type.value.upper()}:{str(data)}"
+            
+            return await self.text_processor.preprocess(text_repr)
+        except Exception as e:
+            logger.error(f"{self.modality_type.value} preprocessing error: {str(e)}")
+            raise PreprocessingError(f"Failed to preprocess {self.modality_type.value}: {str(e)}", {"error": str(e)})
+    
+    def tokenize(self, preprocessed_text: str) -> TokenizationResult:
+        """Tokenize preprocessed extended modality data."""
+        text_result = self.text_processor.tokenize(preprocessed_text)
+        
+        return TokenizationResult(
+            tokens=text_result.tokens,
+            attention_mask=text_result.attention_mask,
+            modality=self.modality_type,
+            source_shape=text_result.source_shape,
+            processing_time_ms=text_result.processing_time_ms,
+            cached=text_result.cached,
+            source_flag=text_result.source_flag,
+            metadata={
+                "type": self.modality_type.value,
+                "text_representation": True,
+                "original_data_type": type(preprocessed_text).__name__
+            }
+        )
+
+
 class MultimodalTokenizer:
     """
     Production-grade tokenizer multiplexer for GPT-4o.
@@ -981,9 +1145,20 @@ class MultimodalTokenizer:
         # Initialize processors for each modality
         self.processors = {
             ModalityType.TEXT: TextProcessor(self.config),
+            ModalityType.STRUCTURED: TextProcessor(self.config),  # Uses text processor for structured data
             ModalityType.IMAGE: ImageProcessor(self.config),
             ModalityType.AUDIO: AudioProcessor(self.config),
-            ModalityType.VIDEO: VideoProcessor(self.config)
+            ModalityType.VIDEO: VideoProcessor(self.config),
+            ModalityType.TOOL: ToolProcessor(self.config),
+            ModalityType.EMBEDDING: EmbeddingProcessor(self.config),
+            ModalityType.LIVE_WEB: ExtendedModalityProcessor(self.config, ModalityType.LIVE_WEB),
+            ModalityType.LIDAR: ExtendedModalityProcessor(self.config, ModalityType.LIDAR),
+            ModalityType.GPS: ExtendedModalityProcessor(self.config, ModalityType.GPS),
+            ModalityType.CLOCK: ExtendedModalityProcessor(self.config, ModalityType.CLOCK),
+            ModalityType.RM_RF: ExtendedModalityProcessor(self.config, ModalityType.RM_RF),
+            ModalityType.ADS_B: ExtendedModalityProcessor(self.config, ModalityType.ADS_B),
+            ModalityType.EYES: ExtendedModalityProcessor(self.config, ModalityType.EYES),
+            ModalityType.EARS: ExtendedModalityProcessor(self.config, ModalityType.EARS)
         }
         
         # Thread pool for parallel processing
